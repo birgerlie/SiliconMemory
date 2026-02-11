@@ -31,6 +31,26 @@ from silicon_memory.security.types import (
 SILICONDB_AVAILABLE = bool(os.environ.get("SILICONDB_LIBRARY_PATH"))
 
 
+from tests.embedder_cache import MockEmbedder
+
+_mock_embedder = MockEmbedder(dimension=768, model_name="mock-768")
+
+
+def create_test_memory(db_path, user_context):
+    """Create a SiliconMemory instance with mock embedder for tests."""
+    from silicon_memory import SiliconMemory
+
+    memory = SiliconMemory(db_path, user_context=user_context, auto_embedder=False)
+    # Inject mock embedder into the underlying SiliconDB
+    memory._backend._db._db.set_embedder(
+        _mock_embedder.embed,
+        dimension=_mock_embedder.dimension,
+        model_name=_mock_embedder.model_name,
+        warmup=True,
+    )
+    return memory
+
+
 # ============================================================================
 # Fixtures
 # ============================================================================
@@ -107,7 +127,7 @@ class TestMultiUserIsolation:
         db_path = temp_db_dir / "isolation.db"
 
         # Alice stores a private belief
-        async with SiliconMemory(db_path, user_context=user_alice) as alice_memory:
+        async with create_test_memory(db_path, user_context=user_alice) as alice_memory:
             belief = Belief(
                 id=uuid4(),
                 content="Alice's secret information",
@@ -118,7 +138,7 @@ class TestMultiUserIsolation:
             await alice_memory.commit_belief(belief)
 
         # Bob should not be able to see Alice's private belief
-        async with SiliconMemory(db_path, user_context=user_bob) as bob_memory:
+        async with create_test_memory(db_path, user_context=user_bob) as bob_memory:
             results = await bob_memory.query_beliefs("secret information")
             assert len(results) == 0, "Bob should not see Alice's private belief"
 
@@ -132,7 +152,7 @@ class TestMultiUserIsolation:
         db_path = temp_db_dir / "workspace.db"
 
         # Alice stores a workspace-level belief
-        async with SiliconMemory(db_path, user_context=user_alice) as alice_memory:
+        async with create_test_memory(db_path, user_context=user_alice) as alice_memory:
             privacy = PrivacyMetadata.create_for_user(
                 user_alice,
                 privacy_level=PrivacyLevel.WORKSPACE,
@@ -148,7 +168,7 @@ class TestMultiUserIsolation:
             await alice_memory.commit_belief(belief)
 
         # Bob should be able to see Alice's workspace belief
-        async with SiliconMemory(db_path, user_context=user_bob) as bob_memory:
+        async with create_test_memory(db_path, user_context=user_bob) as bob_memory:
             results = await bob_memory.query_beliefs("team knowledge Python")
             assert len(results) > 0, "Bob should see workspace belief"
 
@@ -162,7 +182,7 @@ class TestMultiUserIsolation:
         db_path = temp_db_dir / "cross_tenant.db"
 
         # Alice stores workspace data in Acme Corp
-        async with SiliconMemory(db_path, user_context=user_alice) as alice_memory:
+        async with create_test_memory(db_path, user_context=user_alice) as alice_memory:
             privacy = PrivacyMetadata.create_for_user(
                 user_alice,
                 privacy_level=PrivacyLevel.WORKSPACE,
@@ -178,7 +198,7 @@ class TestMultiUserIsolation:
             await alice_memory.commit_belief(belief)
 
         # Charlie from Different Corp should NOT see Acme's workspace data
-        async with SiliconMemory(db_path, user_context=user_charlie) as charlie_memory:
+        async with create_test_memory(db_path, user_context=user_charlie) as charlie_memory:
             results = await charlie_memory.query_beliefs("Acme internal")
             assert len(results) == 0, "Charlie should not see cross-tenant workspace data"
 
@@ -192,7 +212,7 @@ class TestMultiUserIsolation:
         db_path = temp_db_dir / "public.db"
 
         # Alice stores public data
-        async with SiliconMemory(db_path, user_context=user_alice) as alice_memory:
+        async with create_test_memory(db_path, user_context=user_alice) as alice_memory:
             privacy = PrivacyMetadata.create_for_user(
                 user_alice,
                 privacy_level=PrivacyLevel.PUBLIC,
@@ -208,7 +228,7 @@ class TestMultiUserIsolation:
             await alice_memory.commit_belief(belief)
 
         # Charlie from Different Corp CAN see public data
-        async with SiliconMemory(db_path, user_context=user_charlie) as charlie_memory:
+        async with create_test_memory(db_path, user_context=user_charlie) as charlie_memory:
             results = await charlie_memory.query_beliefs("open source")
             assert len(results) > 0, "Charlie should see public data"
 
@@ -222,7 +242,7 @@ class TestMultiUserIsolation:
         db_path = temp_db_dir / "admin_access.db"
 
         # Alice stores private data
-        async with SiliconMemory(db_path, user_context=user_alice) as alice_memory:
+        async with create_test_memory(db_path, user_context=user_alice) as alice_memory:
             belief = Belief(
                 id=uuid4(),
                 content="Alice's very private secret",
@@ -233,7 +253,7 @@ class TestMultiUserIsolation:
             await alice_memory.commit_belief(belief)
 
         # Admin CAN see Alice's private data
-        async with SiliconMemory(db_path, user_context=admin_acme) as admin_memory:
+        async with create_test_memory(db_path, user_context=admin_acme) as admin_memory:
             results = await admin_memory.query_beliefs("very private secret")
             assert len(results) > 0, "Admin should see all tenant data"
 
@@ -258,7 +278,7 @@ class TestExplicitSharing:
 
         # Alice stores private data and shares with Bob
         belief_id = None
-        async with SiliconMemory(db_path, user_context=user_alice) as alice_memory:
+        async with create_test_memory(db_path, user_context=user_alice) as alice_memory:
             belief = Belief(
                 id=uuid4(),
                 content="Secret shared with Bob only",
@@ -273,7 +293,7 @@ class TestExplicitSharing:
             await alice_memory.share_entity(f"belief-{belief_id}", "bob")
 
         # Bob should now see the shared belief
-        async with SiliconMemory(db_path, user_context=user_bob) as bob_memory:
+        async with create_test_memory(db_path, user_context=user_bob) as bob_memory:
             results = await bob_memory.query_beliefs("shared with Bob")
             assert len(results) > 0, "Bob should see explicitly shared belief"
 
@@ -294,7 +314,7 @@ class TestForgetting:
 
         db_path = temp_db_dir / "forget_entity.db"
 
-        async with SiliconMemory(db_path, user_context=user_alice) as memory:
+        async with create_test_memory(db_path, user_context=user_alice) as memory:
             # Store a belief
             belief = Belief(
                 id=uuid4(),
@@ -325,7 +345,7 @@ class TestForgetting:
 
         db_path = temp_db_dir / "forget_session.db"
 
-        async with SiliconMemory(db_path, user_context=user_alice) as memory:
+        async with create_test_memory(db_path, user_context=user_alice) as memory:
             session_id = "session-to-forget"
 
             # Store experiences in the session
@@ -361,7 +381,7 @@ class TestTransparency:
 
         db_path = temp_db_dir / "transparency.db"
 
-        async with SiliconMemory(db_path, user_context=user_alice) as memory:
+        async with create_test_memory(db_path, user_context=user_alice) as memory:
             # Store some beliefs about Python
             belief = Belief(
                 id=uuid4(),
@@ -396,7 +416,7 @@ class TestInspector:
 
         db_path = temp_db_dir / "inspect.db"
 
-        async with SiliconMemory(db_path, user_context=user_alice) as memory:
+        async with create_test_memory(db_path, user_context=user_alice) as memory:
             # Store various items
             await memory.commit_belief(Belief(
                 id=uuid4(),
@@ -438,7 +458,7 @@ class TestInspector:
 
         # Create and export memories
         records = []
-        async with SiliconMemory(db_path1, user_context=user_alice) as memory:
+        async with create_test_memory(db_path1, user_context=user_alice) as memory:
             # Store items
             await memory.commit_belief(Belief(
                 id=uuid4(),
@@ -455,7 +475,7 @@ class TestInspector:
         assert len(records) > 0
 
         # Import to new database
-        async with SiliconMemory(db_path2, user_context=user_alice) as memory:
+        async with create_test_memory(db_path2, user_context=user_alice) as memory:
             result = await memory.import_memories(records)
             assert result["imported"] > 0
 
@@ -470,7 +490,7 @@ class TestInspector:
 
         db_path = temp_db_dir / "correct.db"
 
-        async with SiliconMemory(db_path, user_context=user_alice) as memory:
+        async with create_test_memory(db_path, user_context=user_alice) as memory:
             # Store a belief with a typo
             belief = Belief(
                 id=uuid4(),
@@ -507,7 +527,7 @@ class TestPreferences:
 
         db_path = temp_db_dir / "preferences.db"
 
-        async with SiliconMemory(db_path, user_context=user_alice) as memory:
+        async with create_test_memory(db_path, user_context=user_alice) as memory:
             # Add blocked topic
             await memory.add_blocked_topic("medical")
 
@@ -536,7 +556,7 @@ class TestConsent:
 
         db_path = temp_db_dir / "consent.db"
 
-        async with SiliconMemory(db_path, user_context=user_alice) as memory:
+        async with create_test_memory(db_path, user_context=user_alice) as memory:
             # Store a belief
             belief = Belief(
                 id=uuid4(),

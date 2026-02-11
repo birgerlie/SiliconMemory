@@ -327,6 +327,7 @@ def silicon_memory(temp_db_path: Path, mock_embedder: MockEmbedder):
                 tenant_id="test-tenant",
             )
             self._policy_engine = PolicyEngine()
+            self._working_keys: set[str] = set()
 
     backend = TestSiliconDBBackend(db)
 

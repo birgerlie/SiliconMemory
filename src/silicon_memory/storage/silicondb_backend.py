@@ -111,6 +111,9 @@ class SiliconDBBackend:
         self._decay_config = decay_config or DecayConfig()
         self._user_context = user_context
         self._policy_engine = PolicyEngine()
+        # Track working memory keys in-process (workaround for SiliconDB #125:
+        # empty-query search with metadata filter returns no results)
+        self._working_keys: set[str] = set()
 
     def _build_external_id(self, entity_type: str, entity_id: UUID | str) -> str:
         """Build the new external ID format: {tenant_id}/{user_id}/{type}-{uuid}."""
@@ -674,6 +677,8 @@ class SiliconDBBackend:
                 node_type=self.NODE_TYPE_WORKING,
             )
 
+        self._working_keys.add(key)
+
     async def get_working(self, key: str) -> Any | None:
         """Get a working memory value if not expired."""
         external_id = self._build_external_id("working", key)
@@ -707,80 +712,63 @@ class SiliconDBBackend:
         external_id = self._build_external_id("working", key)
         try:
             self._db.delete(external_id)
+            self._working_keys.discard(key)
             return True
         except Exception:
             return False
 
     async def get_all_working(self) -> dict[str, Any]:
-        """Get all non-expired working memory values."""
-        now = utc_now()
+        """Get all non-expired working memory values.
+
+        Uses in-process key tracking to iterate over known keys via
+        direct get(), working around SiliconDB #125 (empty-query search
+        with metadata filter returns no results).
+        """
         result = {}
-        user_prefix = self._get_user_prefix()
+        expired_keys = []
 
-        # Search for working memory entries
-        results = self._db.search(
-            query="",
-            k=1000,
-            filter={"node_type": self.NODE_TYPE_WORKING},
-        )
-
-        for r in results:
-            if self._rget(r, "node_type") != self.NODE_TYPE_WORKING:
-                continue
-
-            # Only return user's own working memory
-            ext_id = self._rget(r, "external_id", "")
-            if not ext_id.startswith(user_prefix):
-                continue
-
-            metadata = self._rget(r, "metadata") or {}
-            expires_at_str = metadata.get("expires_at")
-
-            if expires_at_str:
-                expires_at = datetime.fromisoformat(expires_at_str)
-                if now > expires_at:
-                    # Expired - skip (could clean up here too)
-                    continue
-
-            key = metadata.get("key")
-            value = metadata.get("value")
-            if key:
+        for key in self._working_keys:
+            value = await self.get_working(key)
+            if value is not None:
                 result[key] = value
+            else:
+                expired_keys.append(key)
+
+        # Clean up expired keys from tracking set
+        for key in expired_keys:
+            self._working_keys.discard(key)
 
         return result
 
     async def cleanup_expired_working(self) -> int:
-        """Clean up expired working memory entries. Returns count deleted."""
+        """Clean up expired working memory entries. Returns count deleted.
+
+        Uses in-process key tracking (workaround for SiliconDB #125).
+        """
         now = utc_now()
         deleted = 0
-        user_prefix = self._get_user_prefix()
+        expired_keys = []
 
-        results = self._db.search(
-            query="",
-            k=1000,
-            filter={"node_type": self.NODE_TYPE_WORKING},
-        )
-
-        for r in results:
-            if self._rget(r, "node_type") != self.NODE_TYPE_WORKING:
-                continue
-
-            # Only clean up user's own working memory
-            ext_id = self._rget(r, "external_id", "")
-            if not ext_id.startswith(user_prefix):
-                continue
-
-            metadata = self._rget(r, "metadata") or {}
-            expires_at_str = metadata.get("expires_at")
-
-            if expires_at_str:
-                expires_at = datetime.fromisoformat(expires_at_str)
-                if now > expires_at:
-                    try:
-                        self._db.delete(ext_id)
+        for key in self._working_keys:
+            external_id = self._build_external_id("working", key)
+            try:
+                doc = self._db.get(external_id)
+                if not doc:
+                    expired_keys.append(key)
+                    continue
+                metadata = doc.get("metadata", {})
+                expires_at_str = metadata.get("expires_at")
+                if expires_at_str:
+                    expires_at = datetime.fromisoformat(expires_at_str)
+                    if now > expires_at:
+                        self._db.delete(external_id)
+                        expired_keys.append(key)
                         deleted += 1
-                    except Exception:
-                        pass
+            except Exception:
+                pass
+
+        for key in expired_keys:
+            self._working_keys.discard(key)
 
         return deleted
 

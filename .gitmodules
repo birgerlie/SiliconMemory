@@ -1,3 +1,3 @@
-[submodule "silicondb"]
-	path = silicondb
+[submodule "deps/silicondb"]
+	path = deps/silicondb
 	url = git@github.com:birgerlie/SiliconDB.git
