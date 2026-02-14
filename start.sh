@@ -20,6 +20,15 @@ if [ ! -d "$VENV" ]; then
   exit 1
 fi
 
+# SiliconDB native library
+export SILICONDB_LIBRARY_PATH="${SILICONDB_LIBRARY_PATH:-$SCRIPT_DIR/deps/silicondb/.build/release}"
+
+if [ ! -f "$SILICONDB_LIBRARY_PATH/libSiliconDBCAPI.dylib" ]; then
+  echo "Error: SiliconDB library not found at $SILICONDB_LIBRARY_PATH" >&2
+  echo "Build it first: cd deps/silicondb && swift build -c release" >&2
+  exit 1
+fi
+
 exec "$VENV/bin/silicon-memory-server" \
   --mode rest \
   --port 8420 \
