@@ -9,6 +9,7 @@ from typing import Any, AsyncIterator
 from fastapi import Depends, Header, Request
 
 from silicon_memory.llm.provider import SiliconLLMProvider
+from silicon_memory.llm.scheduler import LLMScheduler
 from silicon_memory.memory.silicondb_router import SiliconMemory
 from silicon_memory.security.types import UserContext
 from silicon_memory.server.config import ServerConfig
@@ -78,6 +79,11 @@ def get_pool(request: Request) -> MemoryPool:
 def get_llm(request: Request) -> SiliconLLMProvider:
     """Get the shared LLM provider from app state."""
     return request.app.state.llm
+
+
+def get_scheduler(request: Request) -> LLMScheduler:
+    """Get the shared LLM scheduler from app state."""
+    return request.app.state.scheduler
 
 
 def get_memory(

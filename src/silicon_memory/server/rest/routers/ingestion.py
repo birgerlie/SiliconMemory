@@ -6,8 +6,9 @@ import logging
 
 from fastapi import APIRouter, Depends
 
+from silicon_memory.llm.scheduler import LLMScheduler
 from silicon_memory.memory.silicondb_router import SiliconMemory
-from silicon_memory.server.dependencies import get_llm, get_memory
+from silicon_memory.server.dependencies import get_memory, get_scheduler
 from silicon_memory.server.errors import IngestionError
 from silicon_memory.server.schemas import IngestRequest, IngestResponse
 
@@ -44,14 +45,14 @@ def _load_adapter(source_type: str):
 async def ingest(
     body: IngestRequest,
     memory: SiliconMemory = Depends(get_memory),
-    llm=Depends(get_llm),
+    scheduler: LLMScheduler = Depends(get_scheduler),
 ) -> IngestResponse:
     adapter = _load_adapter(body.source_type)
     result = await memory.ingest_from(
         adapter=adapter,
         content=body.content,
         metadata=body.metadata,
-        llm_provider=llm,
+        llm_provider=scheduler,
     )
 
     return IngestResponse(

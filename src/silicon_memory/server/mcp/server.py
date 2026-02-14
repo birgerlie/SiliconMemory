@@ -19,6 +19,7 @@ from silicon_memory.core.types import (
     Triplet,
 )
 from silicon_memory.llm.provider import SiliconLLMProvider
+from silicon_memory.llm.scheduler import LLMScheduler, Priority
 from silicon_memory.memory.silicondb_router import RecallContext, SiliconMemory
 from silicon_memory.security.types import UserContext
 from silicon_memory.server.config import ServerConfig
@@ -36,6 +37,13 @@ def create_mcp_server(config: ServerConfig) -> FastMCP:
 
     # Shared state
     _llm = SiliconLLMProvider(config=config.llm)
+    _scheduler = LLMScheduler(
+        _llm,
+        max_concurrency=config.llm.max_concurrency,
+        max_queue_size=config.llm.max_queue_size,
+        max_wait_seconds=config.llm.max_wait_seconds,
+    )
+    _scheduler_started = False
     _user_ctx = UserContext(user_id="default", tenant_id="default")
     _memory: SiliconMemory | None = None
 
@@ -133,7 +141,13 @@ def create_mcp_server(config: ServerConfig) -> FastMCP:
         # Auto-classify using LLM
         memory_type = type
         if memory_type == "auto":
-            memory_type, _ = await classify_memory_type(_llm, content)
+            if not _scheduler_started:
+                await _scheduler.start()
+                nonlocal _scheduler_started
+                _scheduler_started = True
+            memory_type, _ = await classify_memory_type(
+                _scheduler, content, priority=Priority.HIGH
+            )
 
         if memory_type == "belief":
             triplet = None
@@ -389,7 +403,11 @@ def create_mcp_server(config: ServerConfig) -> FastMCP:
         if action == "snapshot":
             if not task_context:
                 return "task_context required for snapshot"
-            snapshot = await memory.create_snapshot(task_context, llm_provider=_llm)
+            if not _scheduler_started:
+                await _scheduler.start()
+                nonlocal _scheduler_started
+                _scheduler_started = True
+            snapshot = await memory.create_snapshot(task_context, llm_provider=_scheduler)
             return (
                 f"Snapshot created: {snapshot.id}\n"
                 f"Task: {snapshot.task_context}\n"

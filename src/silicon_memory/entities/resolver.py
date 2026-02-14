@@ -7,10 +7,11 @@ from typing import TYPE_CHECKING
 
 from silicon_memory.entities.cache import EntityCache
 from silicon_memory.entities.rules import RuleEngine
-from silicon_memory.entities.types import EntityReference, ResolveResult
+from silicon_memory.entities.types import DetectorRule, EntityReference, ExtractorRule, ResolveResult
 
 if TYPE_CHECKING:
     from silicon_memory.entities.learner import RuleLearner
+    from silicon_memory.entities.store import EntityRuleStore
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +30,29 @@ class EntityResolver:
         cache: EntityCache,
         rules: RuleEngine,
         learner: "RuleLearner | None" = None,
+        store: "EntityRuleStore | None" = None,
     ) -> None:
         self.cache = cache
         self.rules = rules
         self._learner = learner
+        self._store = store
         self._unresolved_queue: list[dict] = []
+
+    # ------------------------------------------------------------------
+    # Mutation helpers with auto-persist
+    # ------------------------------------------------------------------
+
+    def add_detector(self, rule: DetectorRule) -> None:
+        """Add detector to engine + auto-persist to store."""
+        self.rules.add_detector(rule)
+        if self._store:
+            self._store.save_detector(rule)
+
+    def add_extractor(self, rule: ExtractorRule) -> None:
+        """Add extractor to engine + auto-persist to store."""
+        self.rules.add_extractor(rule)
+        if self._store:
+            self._store.save_extractor(rule)
 
     async def resolve(self, text: str) -> ResolveResult:
         """Resolve entity references in text. Called by all ingestion adapters."""
@@ -107,6 +126,8 @@ class EntityResolver:
     ) -> None:
         """Manually register an alias → canonical mapping."""
         self.cache.store(alias, canonical_id, entity_type)
+        if self._store:
+            self._store.save_alias(alias, canonical_id, entity_type)
 
     async def learn_rules(self) -> int:
         """Trigger offline rule learning from unresolved queue."""
@@ -116,9 +137,9 @@ class EntityResolver:
             self._unresolved_queue
         )
         for d in detectors:
-            self.rules.add_detector(d)
+            self.add_detector(d)
         for e in extractors:
-            self.rules.add_extractor(e)
+            self.add_extractor(e)
         count = len(detectors) + len(extractors)
         self._unresolved_queue.clear()
         return count

@@ -6,7 +6,6 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends
 
-from silicon_memory.llm.provider import SiliconLLMProvider, classify_memory_type
 from silicon_memory.core.types import (
     Belief,
     Experience,
@@ -15,8 +14,10 @@ from silicon_memory.core.types import (
     SourceType,
     Triplet,
 )
+from silicon_memory.llm.provider import classify_memory_type
+from silicon_memory.llm.scheduler import LLMScheduler, Priority
 from silicon_memory.memory.silicondb_router import RecallContext, SiliconMemory
-from silicon_memory.server.dependencies import get_llm, get_memory, resolve_user_context
+from silicon_memory.server.dependencies import get_memory, get_scheduler
 from silicon_memory.server.errors import MemoryNotFoundError
 from silicon_memory.server.schemas import (
     BeliefItem,
@@ -74,7 +75,7 @@ async def recall(
 async def store(
     body: StoreRequest,
     memory: SiliconMemory = Depends(get_memory),
-    llm: SiliconLLMProvider = Depends(get_llm),
+    scheduler: LLMScheduler = Depends(get_scheduler),
 ) -> StoreResponse:
     item_id = uuid4()
     source = Source(id="api", type=SourceType.HUMAN, reliability=0.8)
@@ -82,7 +83,7 @@ async def store(
     # Auto-classify using LLM if type not specified
     memory_type = body.type
     if memory_type == "auto":
-        memory_type, _ = await classify_memory_type(llm, body.content)
+        memory_type, _ = await classify_memory_type(scheduler, body.content, priority=Priority.HIGH)
 
     if memory_type == "belief":
         triplet = None

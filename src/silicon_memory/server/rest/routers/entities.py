@@ -8,7 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from silicon_memory.entities import EntityResolver
-from silicon_memory.server.dependencies import get_llm
+from silicon_memory.llm.scheduler import LLMScheduler
+from silicon_memory.server.dependencies import get_scheduler
 
 logger = logging.getLogger(__name__)
 
@@ -127,20 +128,19 @@ async def resolve_text(
 @router.post("/entities/bootstrap")
 async def bootstrap(
     body: BootstrapRequest,
-    request: Request,
     resolver: EntityResolver = Depends(get_entity_resolver),
+    scheduler: LLMScheduler = Depends(get_scheduler),
 ) -> BootstrapResponse:
     """Bootstrap entity rules from a sample document using LLM."""
     from silicon_memory.entities.learner import RuleLearner
 
-    llm = get_llm(request)
-    learner = RuleLearner(llm=llm)
+    learner = RuleLearner(llm=scheduler)
     detectors, extractors, aliases = await learner.bootstrap(body.text)
 
     for d in detectors:
-        resolver.rules.add_detector(d)
+        resolver.add_detector(d)
     for e in extractors:
-        resolver.rules.add_extractor(e)
+        resolver.add_extractor(e)
     for short_form, long_form in aliases:
         await resolver.register_alias(short_form, long_form, "alias")
 
@@ -153,14 +153,13 @@ async def bootstrap(
 
 @router.post("/entities/learn")
 async def learn_rules(
-    request: Request,
     resolver: EntityResolver = Depends(get_entity_resolver),
+    scheduler: LLMScheduler = Depends(get_scheduler),
 ) -> LearnResponse:
     """Generate rules from accumulated unresolved entities."""
     from silicon_memory.entities.learner import RuleLearner
 
-    llm = get_llm(request)
-    resolver._learner = RuleLearner(llm=llm)
+    resolver._learner = RuleLearner(llm=scheduler)
     count = await resolver.learn_rules()
     return LearnResponse(rules_created=count)
 

@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from silicon_memory.llm.provider import SiliconLLMProvider
+from silicon_memory.llm.scheduler import LLMScheduler
 from silicon_memory.server.config import ServerConfig
 from silicon_memory.server.dependencies import MemoryPool
 from silicon_memory.server.errors import EXCEPTION_HANDLERS
@@ -38,17 +39,54 @@ def create_app(config: ServerConfig) -> FastAPI:
         app.state.config = config
         app.state.start_time = time.monotonic()
         app.state.llm = SiliconLLMProvider(config=config.llm)
+        app.state.scheduler = LLMScheduler(
+            app.state.llm,
+            max_concurrency=config.llm.max_concurrency,
+            max_queue_size=config.llm.max_queue_size,
+            max_wait_seconds=config.llm.max_wait_seconds,
+        )
+        await app.state.scheduler.start()
         app.state.pool = MemoryPool(config, app.state.llm)
         app.state.reflection_count = 0
         app.state.last_reflection = None
 
-        # Entity resolver
-        from silicon_memory.entities import EntityCache, EntityResolver, RuleEngine
+        # Entity resolver with persistent rule store
+        from silicon_memory.entities import EntityCache, EntityResolver, EntityRuleStore, RuleEngine
+
+        entity_cache = EntityCache()
+        entity_rules = RuleEngine()
+
+        # Open persistent store (shares the same db_path as main DB)
+        try:
+            entity_store = EntityRuleStore(
+                db_path=config.db_path,
+                language=config.language,
+                auto_embedder=config.auto_embedder,
+                embedder_model=config.embedder_model,
+            )
+            # Load persisted rules and aliases into the in-memory engine/cache
+            for d in entity_store.load_all_detectors():
+                entity_rules.add_detector(d)
+            for e in entity_store.load_all_extractors():
+                entity_rules.add_extractor(e)
+            for alias, canonical_id, entity_type in entity_store.load_all_aliases():
+                entity_cache.store(alias, canonical_id, entity_type)
+            logger.info(
+                "Loaded persisted entity rules: %d detectors, %d extractors, %d aliases",
+                len(entity_rules._detectors),
+                len(entity_rules._extractors),
+                entity_cache.size,
+            )
+        except Exception:
+            logger.warning("Could not open entity rule store — rules will not persist", exc_info=True)
+            entity_store = None
 
         app.state.entity_resolver = EntityResolver(
-            cache=EntityCache(),
-            rules=RuleEngine(),
+            cache=entity_cache,
+            rules=entity_rules,
+            store=entity_store,
         )
+        app.state.entity_rule_store = entity_store
         logger.info("Entity resolver initialized")
 
         # Start background workers if full mode
@@ -67,6 +105,13 @@ def create_app(config: ServerConfig) -> FastAPI:
         if hasattr(app.state, "worker"):
             await app.state.worker.stop()
             logger.info("Background reflection worker stopped")
+
+        await app.state.scheduler.shutdown()
+        logger.info("LLM scheduler stopped")
+
+        if getattr(app.state, "entity_rule_store", None):
+            app.state.entity_rule_store.close()
+            logger.info("Entity rule store closed")
 
         app.state.pool.close_all()
         logger.info("Silicon Memory server stopped")

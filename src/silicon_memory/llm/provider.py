@@ -110,6 +110,26 @@ class SiliconLLMProvider:
 
         return parsed
 
+    async def complete(
+        self,
+        prompt: str,
+        system: str | None = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+    ) -> str:
+        """Generate a chat completion with optional system message."""
+        messages: list[dict[str, str]] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        response = await self._client.chat.completions.create(
+            model=self._config.model,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        return response.choices[0].message.content or ""
+
     async def embed(self, text: str) -> list[float]:
         """Not supported — SiliconDB handles embeddings internally."""
         raise NotImplementedError(
@@ -140,9 +160,12 @@ Respond with a single JSON object: {{"type": "belief" | "experience" | "procedur
 
 
 async def classify_memory_type(
-    llm: "SiliconLLMProvider", content: str
+    llm: Any, content: str, *, priority: Any = None
 ) -> tuple[str, float]:
     """Use the LLM to classify content as belief/experience/procedure.
+
+    Accepts either a SiliconLLMProvider or LLMScheduler.
+    When an LLMScheduler is passed, the priority kwarg is forwarded.
 
     Returns (type, confidence).
     """
@@ -153,9 +176,13 @@ async def classify_memory_type(
         confidence: float
 
     try:
+        kwargs: dict[str, Any] = {}
+        if priority is not None:
+            kwargs["priority"] = priority
         result = await llm.generate_structured(
             _CLASSIFY_PROMPT.format(content=content[:500]),
             Classification,
+            **kwargs,
         )
         if result.type in ("belief", "experience", "procedure"):
             return result.type, result.confidence

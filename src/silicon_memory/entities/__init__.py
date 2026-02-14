@@ -4,6 +4,7 @@ from silicon_memory.entities.cache import EntityCache
 from silicon_memory.entities.learner import RuleLearner
 from silicon_memory.entities.resolver import EntityResolver
 from silicon_memory.entities.rules import RuleEngine
+from silicon_memory.entities.store import EntityRuleStore
 from silicon_memory.entities.types import (
     Candidate,
     DetectorRule,
@@ -20,6 +21,7 @@ __all__ = [
     "EntityEntry",
     "EntityReference",
     "EntityResolver",
+    "EntityRuleStore",
     "ExtractorRule",
     "ResolveResult",
     "RuleEngine",
