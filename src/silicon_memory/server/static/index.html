@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-gray-50">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Silicon Memory</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body class="h-full" x-data="{ sidebarOpen: false }">
+
+<!-- Toast notifications -->
+<div class="toast-container" x-data>
+  <template x-for="t in $store.toast.items" :key="t.id">
+    <div class="rounded-lg px-4 py-3 shadow-lg text-sm font-medium flex items-center gap-2 min-w-[250px]"
+         :class="{
+           'bg-green-600 text-white': t.type === 'success',
+           'bg-red-600 text-white': t.type === 'error',
+           'bg-gray-700 text-white': t.type === 'info',
+         }">
+      <span x-text="t.msg"></span>
+    </div>
+  </template>
+</div>
+
+<div class="flex h-full">
+
+  <!-- Mobile sidebar overlay -->
+  <div x-show="sidebarOpen" x-cloak class="sidebar-mobile-overlay fixed inset-0 z-40 flex">
+    <div class="fixed inset-0 bg-black/50" @click="sidebarOpen = false"></div>
+    <div class="relative w-64 bg-gray-900 flex flex-col">
+      <div class="p-4 border-b border-gray-800">
+        <h1 class="text-lg font-bold text-white tracking-tight">Silicon Memory</h1>
+      </div>
+      <nav class="flex-1 p-3 space-y-0.5 overflow-y-auto">
+        <template x-for="item in navItems" :key="item.page">
+          <a :href="'#' + item.page"
+             class="sidebar-link"
+             :class="{ active: $store.router.page === item.page }"
+             @click="sidebarOpen = false"
+             x-text="item.label"></a>
+        </template>
+      </nav>
+    </div>
+  </div>
+
+  <!-- Desktop sidebar -->
+  <aside class="sidebar-desktop w-56 bg-gray-900 flex flex-col flex-shrink-0">
+    <div class="p-4 border-b border-gray-800">
+      <h1 class="text-lg font-bold text-white tracking-tight">Silicon Memory</h1>
+      <p class="text-xs text-gray-500 mt-0.5">Cognitive Memory System</p>
+    </div>
+    <nav class="flex-1 p-3 space-y-0.5 overflow-y-auto">
+      <template x-for="item in navItems" :key="item.page">
+        <a :href="'#' + item.page"
+           class="sidebar-link"
+           :class="{ active: $store.router.page === item.page }"
+           x-text="item.label"></a>
+      </template>
+    </nav>
+    <div class="p-3 border-t border-gray-800 text-xs text-gray-600">v0.1.0</div>
+  </aside>
+
+  <!-- Main content -->
+  <div class="flex-1 flex flex-col min-w-0">
+
+    <!-- Header bar -->
+    <header class="bg-white border-b border-gray-200 px-4 py-2 flex items-center gap-4 flex-shrink-0">
+      <button class="md:hidden text-gray-500" @click="sidebarOpen = true">
+        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+      </button>
+      <div class="flex items-center gap-3 ml-auto text-sm" x-data>
+        <label class="text-gray-500">User</label>
+        <input type="text" x-model="$store.auth.userId" @change="$store.auth.save()"
+               class="border border-gray-300 rounded px-2 py-1 w-28 text-sm focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500">
+        <label class="text-gray-500">Tenant</label>
+        <input type="text" x-model="$store.auth.tenantId" @change="$store.auth.save()"
+               class="border border-gray-300 rounded px-2 py-1 w-28 text-sm focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500">
+      </div>
+    </header>
+
+    <!-- Page content -->
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <!-- =============== DASHBOARD =============== -->
+      <section x-show="$store.router.page === 'dashboard'" x-data="dashboardPage" x-cloak>
+        <h2 class="text-xl font-semibold text-gray-900 mb-4">Dashboard</h2>
+
+        <div x-show="loading && !health" class="flex items-center gap-2 text-gray-500">
+          <div class="spinner"></div> Loading…
+        </div>
+
+        <div x-show="error" class="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 text-sm" x-text="error"></div>
+
+        <div x-show="health" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <!-- Health -->
+          <div class="bg-white rounded-lg border border-gray-200 p-4">
+            <div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Status</div>
+            <div class="flex items-center gap-2">
+              <span class="status-dot" :class="health?.status === 'ok' ? 'ok' : 'error'"></span>
+              <span class="text-lg font-semibold" x-text="health?.status?.toUpperCase()"></span>
+            </div>
+          </div>
+          <!-- Uptime -->
+          <div class="bg-white rounded-lg border border-gray-200 p-4">
+            <div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Uptime</div>
+            <span class="text-lg font-semibold" x-text="formatUptime(health?.uptime_seconds)"></span>
+          </div>
+          <!-- Active users -->
+          <div class="bg-white rounded-lg border border-gray-200 p-4">
+            <div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Active Users</div>
+            <span class="text-lg font-semibold" x-text="status?.active_users ?? '—'"></span>
+          </div>
+          <!-- Reflections -->
+          <div class="bg-white rounded-lg border border-gray-200 p-4">
+            <div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Reflections</div>
+            <span class="text-lg font-semibold" x-text="status?.reflection_count ?? 0"></span>
+          </div>
+        </div>
+
+        <div x-show="status" class="mt-4 bg-white rounded-lg border border-gray-200 p-4">
+          <div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Server Info</div>
+          <dl class="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+            <dt class="text-gray-500">Version</dt><dd class="font-medium" x-text="status?.version"></dd>
+            <dt class="text-gray-500">Mode</dt><dd class="font-medium" x-text="status?.mode"></dd>
+            <dt class="text-gray-500">Last Reflection</dt><dd class="font-medium" x-text="status?.last_reflection || 'Never'"></dd>
+          </dl>
+        </div>
+
+        <button @click="refresh()" class="mt-4 text-sm text-indigo-600 hover:text-indigo-800 flex items-center gap-1">
+          <svg class="w-4 h-4" :class="{ 'animate-spin': loading }" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          Refresh
+        </button>
+      </section>
+
+      <!-- =============== STORE =============== -->
+      <section x-show="$store.router.page === 'store'" x-data="storePage" x-cloak>
+        <h2 class="text-xl font-semibold text-gray-900 mb-4">Store Memory</h2>
+
+        <div class="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl space-y-4">
+          <!-- Type -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Type</label>
+            <select x-model="form.type" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+              <option value="auto">Auto (LLM classifies)</option>
+              <option value="belief">Belief</option>
+              <option value="experience">Experience</option>
+              <option value="procedure">Procedure</option>
+            </select>
+          </div>
+
+          <!-- Content -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Content</label>
+            <textarea x-model="form.content" rows="4" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500" placeholder="Enter memory content…"></textarea>
+          </div>
+
+          <!-- Confidence -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Confidence: <span x-text="parseFloat(form.confidence).toFixed(2)"></span></label>
+            <input type="range" x-model="form.confidence" min="0" max="1" step="0.05" class="w-full">
+          </div>
+
+          <!-- Tags -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Tags (comma-separated)</label>
+            <input type="text" x-model="form.tags" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500" placeholder="tag1, tag2">
+          </div>
+
+          <!-- Belief fields -->
+          <template x-if="form.type === 'belief'">
+            <div class="space-y-3 border-t border-gray-100 pt-3">
+              <p class="text-xs font-medium text-gray-500 uppercase">Triplet (optional)</p>
+              <div class="grid grid-cols-3 gap-3">
+                <input type="text" x-model="form.subject" placeholder="Subject" class="border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                <input type="text" x-model="form.predicate" placeholder="Predicate" class="border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                <input type="text" x-model="form.object" placeholder="Object" class="border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+              </div>
+            </div>
+          </template>
+
+          <!-- Experience fields -->
+          <template x-if="form.type === 'experience'">
+            <div class="space-y-3 border-t border-gray-100 pt-3">
+              <p class="text-xs font-medium text-gray-500 uppercase">Experience details</p>
+              <input type="text" x-model="form.outcome" placeholder="Outcome" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+              <input type="text" x-model="form.session_id" placeholder="Session ID" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+            </div>
+          </template>
+
+          <!-- Procedure fields -->
+          <template x-if="form.type === 'procedure'">
+            <div class="space-y-3 border-t border-gray-100 pt-3">
+              <p class="text-xs font-medium text-gray-500 uppercase">Procedure details</p>
+              <input type="text" x-model="form.name" placeholder="Procedure name" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+              <input type="text" x-model="form.description" placeholder="Description" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+              <input type="text" x-model="form.trigger" placeholder="Trigger condition" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+              <textarea x-model="form.steps" rows="3" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500" placeholder="Steps (one per line)"></textarea>
+            </div>
+          </template>
+
+          <!-- Actions -->
+          <div class="flex items-center gap-3 pt-2">
+            <button @click="submit()" :disabled="loading"
+                    class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
+              <div x-show="loading" class="spinner" style="width:1rem;height:1rem;border-width:2px"></div>
+              Store
+            </button>
+            <button @click="reset()" class="text-sm text-gray-500 hover:text-gray-700">Reset</button>
+          </div>
+
+          <!-- Result -->
+          <div x-show="result" class="bg-green-50 border border-green-200 rounded-lg p-3 text-sm">
+            Stored as <span class="font-semibold" x-text="result?.type"></span> —
+            ID: <code class="text-xs bg-green-100 px-1 rounded" x-text="result?.id"></code>
+          </div>
+        </div>
+      </section>
+
+      <!-- =============== RECALL =============== -->
+      <section x-show="$store.router.page === 'recall'" x-data="recallPage" x-cloak>
+        <h2 class="text-xl font-semibold text-gray-900 mb-4">Recall</h2>
+
+        <div class="bg-white rounded-lg border border-gray-200 p-6 max-w-3xl space-y-4">
+          <div class="flex gap-3">
+            <input type="text" x-model="query" @keydown.enter="submit()" placeholder="What do you want to recall?"
+                   class="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+            <button @click="submit()" :disabled="loading"
+                    class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
+              <div x-show="loading" class="spinner" style="width:1rem;height:1rem;border-width:2px"></div>
+              Recall
+            </button>
+          </div>
+
+          <!-- Advanced options -->
+          <div>
+            <button @click="showAdvanced = !showAdvanced" class="text-xs text-gray-500 hover:text-gray-700">
+              <span x-text="showAdvanced ? '▾ Hide' : '▸ Show'"></span> advanced options
+            </button>
+            <div x-show="showAdvanced" x-cloak class="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Max Facts</label>
+                <input type="number" x-model.number="opts.max_facts" class="w-full border border-gray-300 rounded px-2 py-1 text-sm">
+              </div>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Max Experiences</label>
+                <input type="number" x-model.number="opts.max_experiences" class="w-full border border-gray-300 rounded px-2 py-1 text-sm">
+              </div>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Min Confidence</label>
+                <input type="number" x-model.number="opts.min_confidence" min="0" max="1" step="0.1" class="w-full border border-gray-300 rounded px-2 py-1 text-sm">
+              </div>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Salience Profile</label>
+                <select x-model="opts.salience_profile" class="w-full border border-gray-300 rounded px-2 py-1 text-sm">
+                  <option value="">Default</option>
+                  <option value="debugging">Debugging</option>
+                  <option value="architecture">Architecture</option>
+                  <option value="planning">Planning</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Results -->
+        <div x-show="result" class="mt-6 max-w-3xl">
+          <div class="text-sm text-gray-500 mb-3">
+            <span x-text="result?.total_items || 0"></span> items recalled for "<span x-text="result?.query"></span>"
+          </div>
+
+          <!-- Tabs -->
+          <div class="flex border-b border-gray-200 mb-4">
+            <template x-for="tab in ['facts', 'experiences', 'procedures', 'working']" :key="tab">
+              <button @click="activeTab = tab"
+                      class="px-4 py-2 text-sm font-medium border-b-2 -mb-px"
+                      :class="activeTab === tab ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'">
+                <span x-text="tab.charAt(0).toUpperCase() + tab.slice(1)"></span>
+                <span class="ml-1 text-xs bg-gray-100 text-gray-600 rounded-full px-1.5 py-0.5" x-text="tabCount(tab)"></span>
+              </button>
+            </template>
+          </div>
+
+          <!-- Facts -->
+          <div x-show="activeTab === 'facts'" class="space-y-2">
+            <template x-for="(item, i) in result?.facts || []" :key="i">
+              <div class="bg-white rounded-lg border border-gray-200 p-4">
+                <p class="text-sm text-gray-800" x-text="item.content"></p>
+                <div class="mt-2 flex items-center gap-3 text-xs text-gray-500">
+                  <div class="confidence-bar w-20">
+                    <div class="confidence-bar-fill" :class="confidenceColor(item.confidence)" :style="`width: ${item.confidence * 100}%`"></div>
+                  </div>
+                  <span x-text="(item.confidence * 100).toFixed(0) + '%'"></span>
+                  <span class="text-gray-400">|</span>
+                  <span x-text="'relevance: ' + (item.relevance_score * 100).toFixed(0) + '%'"></span>
+                </div>
+              </div>
+            </template>
+            <p x-show="!result?.facts?.length" class="text-sm text-gray-400">No facts found.</p>
+          </div>
+
+          <!-- Experiences -->
+          <div x-show="activeTab === 'experiences'" class="space-y-2">
+            <template x-for="(item, i) in result?.experiences || []" :key="i">
+              <div class="bg-white rounded-lg border border-gray-200 p-4">
+                <p class="text-sm text-gray-800" x-text="item.content"></p>
+                <div class="mt-2 flex items-center gap-3 text-xs text-gray-500">
+                  <div class="confidence-bar w-20">
+                    <div class="confidence-bar-fill" :class="confidenceColor(item.confidence)" :style="`width: ${item.confidence * 100}%`"></div>
+                  </div>
+                  <span x-text="(item.confidence * 100).toFixed(0) + '%'"></span>
+                </div>
+              </div>
+            </template>
+            <p x-show="!result?.experiences?.length" class="text-sm text-gray-400">No experiences found.</p>
+          </div>
+
+          <!-- Procedures -->
+          <div x-show="activeTab === 'procedures'" class="space-y-2">
+            <template x-for="(item, i) in result?.procedures || []" :key="i">
+              <div class="bg-white rounded-lg border border-gray-200 p-4">
+                <p class="text-sm text-gray-800" x-text="item.content"></p>
+              </div>
+            </template>
+            <p x-show="!result?.procedures?.length" class="text-sm text-gray-400">No procedures found.</p>
+          </div>
+
+          <!-- Working context -->
+          <div x-show="activeTab === 'working'">
+            <div x-show="Object.keys(result?.working_context || {}).length === 0" class="text-sm text-gray-400">No working context.</div>
+            <div x-show="Object.keys(result?.working_context || {}).length > 0" class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+              <table class="w-full text-sm">
+                <thead class="bg-gray-50">
+                  <tr><th class="text-left px-4 py-2 text-xs font-medium text-gray-500">Key</th><th class="text-left px-4 py-2 text-xs font-medium text-gray-500">Value</th></tr>
+                </thead>
+                <tbody>
+                  <template x-for="[k, v] in Object.entries(result?.working_context || {})" :key="k">
+                    <tr class="border-t border-gray-100">
+                      <td class="px-4 py-2 font-mono text-xs" x-text="k"></td>
+                      <td class="px-4 py-2 text-xs" x-text="typeof v === 'object' ? JSON.stringify(v) : v"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =============== QUERY =============== -->
+      <section x-show="$store.router.page === 'query'" x-data="queryPage" x-cloak>
+        <h2 class="text-xl font-semibold text-gray-900 mb-4">Query Beliefs</h2>
+
+        <div class="bg-white rounded-lg border border-gray-200 p-6 max-w-3xl space-y-4">
+          <div class="flex gap-3">
+            <input type="text" x-model="query" @keydown.enter="submit()" placeholder="Search beliefs semantically…"
+                   class="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+            <button @click="submit()" :disabled="loading"
+                    class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
+              <div x-show="loading" class="spinner" style="width:1rem;height:1rem;border-width:2px"></div>
+              Query
+            </button>
+          </div>
+          <div class="flex gap-4 text-sm">
+            <div>
+              <label class="text-xs text-gray-500">Limit</label>
+              <input type="number" x-model.number="limit" min="1" max="100" class="ml-2 w-16 border border-gray-300 rounded px-2 py-1 text-sm">
+            </div>
+            <div>
+              <label class="text-xs text-gray-500">Min Confidence</label>
+              <input type="number" x-model.number="min_confidence" min="0" max="1" step="0.1" class="ml-2 w-16 border border-gray-300 rounded px-2 py-1 text-sm">
+            </div>
+          </div>
+        </div>
+
+        <div x-show="result" class="mt-6 max-w-3xl">
+          <div class="text-sm text-gray-500 mb-3"><span x-text="result?.count || 0"></span> beliefs found</div>
+          <div class="space-y-2">
+            <template x-for="b in result?.beliefs || []" :key="b.id">
+              <div class="bg-white rounded-lg border border-gray-200 p-4">
+                <div class="flex items-start justify-between gap-3">
+                  <p class="text-sm text-gray-800 flex-1" x-text="b.content"></p>
+                  <span class="badge flex-shrink-0" :class="statusBadge(b.status)" x-text="b.status"></span>
+                </div>
+                <div class="mt-2 flex items-center gap-3 text-xs text-gray-500">
+                  <div class="confidence-bar w-20">
+                    <div class="confidence-bar-fill bg-indigo-500" :style="`width: ${b.confidence * 100}%`"></div>
+                  </div>
+                  <span x-text="(b.confidence * 100).toFixed(0) + '%'"></span>
+                  <template x-if="b.subject">
+                    <span class="text-gray-400">
+                      <span x-text="b.subject"></span> → <span x-text="b.predicate"></span> → <span x-text="b.object_"></span>
+                    </span>
+                  </template>
+                  <code class="text-gray-400 text-xs ml-auto" x-text="b.id.slice(0, 8) + '…'"></code>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </section>
+
+      <!-- =============== DETAIL =============== -->
+      <section x-show="$store.router.page === 'detail'" x-data="detailPage" x-cloak>
+        <h2 class="text-xl font-semibold text-gray-900 mb-4">Memory Detail</h2>
+
+        <div class="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl space-y-4">
+          <div class="flex gap-3">
+            <select x-model="type" class="border border-gray-300 rounded-md px-3 py-2 text-sm w-36 focus:ring-indigo-500 focus:border-indigo-500">
+              <option value="belief">Belief</option>
+              <option value="experience">Experience</option>
+              <option value="procedure">Procedure</option>
+            </select>
+            <input type="text" x-model="id" @keydown.enter="submit()" placeholder="Memory UUID"
+                   class="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm font-mono focus:ring-indigo-500 focus:border-indigo-500">
+            <button @click="submit()" :disabled="loading"
+                    class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
+              Fetch
+            </button>
+          </div>
+        </div>
+
+        <div x-show="error" class="mt-4 max-w-2xl bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 text-sm" x-text="error"></div>
+
+        <div x-show="item" class="mt-4 max-w-2xl bg-white rounded-lg border border-gray-200 p-6">
+          <dl class="space-y-3 text-sm">
+            <div class="flex gap-4"><dt class="w-24 text-gray-500 flex-shrink-0">ID</dt><dd class="font-mono text-xs" x-text="item?.id"></dd></div>
+            <div class="flex gap-4"><dt class="w-24 text-gray-500 flex-shrink-0">Type</dt><dd x-text="item?.type"></dd></div>
+            <div class="flex gap-4"><dt class="w-24 text-gray-500 flex-shrink-0">Content</dt><dd class="whitespace-pre-wrap" x-text="item?.content"></dd></div>
+            <div class="flex gap-4" x-show="item?.confidence != null">
+              <dt class="w-24 text-gray-500 flex-shrink-0">Confidence</dt>
+              <dd>
+                <div class="flex items-center gap-2">
+                  <div class="confidence-bar w-24"><div class="confidence-bar-fill bg-indigo-500" :style="`width: ${(item?.confidence || 0) * 100}%`"></div></div>
+                  <span x-text="((item?.confidence || 0) * 100).toFixed(0) + '%'"></span>
+                </div>
+              </dd>
+            </div>
+            <div class="flex gap-4" x-show="item?.metadata && Object.keys(item.metadata).length">
+              <dt class="w-24 text-gray-500 flex-shrink-0">Metadata</dt>
+              <dd><pre class="text-xs bg-gray-50 rounded p-2 overflow-x-auto" x-text="JSON.stringify(item?.metadata, null, 2)"></pre></dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <!-- =============== WORKING MEMORY =============== -->
+      <section x-show="$store.router.page === 'working-memory'" x-data="workingMemoryPage" x-cloak>
+        <h2 class="text-xl font-semibold text-gray-900 mb-4">Working Memory</h2>
+
+        <!-- Add form -->
+        <div class="bg-white rounded-lg border border-gray-200 p-4 max-w-3xl mb-4">
+          <div class="flex gap-3 items-end">
+            <div class="flex-1">
+              <label class="block text-xs text-gray-500 mb-1">Key</label>
+              <input type="text" x-model="newKey" class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500" placeholder="key">
+            </div>
+            <div class="flex-1">
+              <label class="block text-xs text-gray-500 mb-1">Value</label>
+              <input type="text" x-model="newValue" class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500" placeholder="value (JSON ok)">
+            </div>
+            <div class="w-24">
+              <label class="block text-xs text-gray-500 mb-1">TTL (s)</label>
+              <input type="number" x-model.number="newTTL" class="w-full border border-gray-300 rounded px-3 py-2 text-sm">
+            </div>
+            <button @click="add()" class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700">Add</button>
+          </div>
+        </div>
+
+        <!-- Table -->
+        <div class="max-w-3xl bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <div x-show="loading" class="p-4 flex items-center gap-2 text-gray-500"><div class="spinner"></div> Loading…</div>
+          <div x-show="!loading && entryList().length === 0" class="p-4 text-sm text-gray-400">No working memory entries.</div>
+          <table x-show="!loading && entryList().length > 0" class="w-full text-sm">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="text-left px-4 py-2 text-xs font-medium text-gray-500">Key</th>
+                <th class="text-left px-4 py-2 text-xs font-medium text-gray-500">Value</th>
+                <th class="w-16"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="entry in entryList()" :key="entry.key">
+                <tr class="border-t border-gray-100">
+                  <td class="px-4 py-2 font-mono text-xs" x-text="entry.key"></td>
+                  <td class="px-4 py-2 text-xs max-w-xs truncate" x-text="formatValue(entry.value)"></td>
+                  <td class="px-4 py-2">
+                    <button @click="remove(entry.key)" class="text-red-500 hover:text-red-700 text-xs">Delete</button>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+
+        <button @click="refresh()" class="mt-3 text-sm text-indigo-600 hover:text-indigo-800">Refresh</button>
+      </section>
+
+      <!-- =============== DECISIONS =============== -->
+      <section x-show="$store.router.page === 'decisions'" x-data="decisionsPage" x-cloak>
+        <h2 class="text-xl font-semibold text-gray-900 mb-4">Decisions</h2>
+
+        <!-- Tabs -->
+        <div class="flex border-b border-gray-200 mb-4 max-w-2xl">
+          <button @click="activeTab = 'record'" class="px-4 py-2 text-sm font-medium border-b-2 -mb-px"
+                  :class="activeTab === 'record' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500'">Record</button>
+          <button @click="activeTab = 'search'" class="px-4 py-2 text-sm font-medium border-b-2 -mb-px"
+                  :class="activeTab === 'search' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500'">Search</button>
+        </div>
+
+        <!-- Record tab -->
+        <div x-show="activeTab === 'record'" class="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Title</label>
+            <input type="text" x-model="form.title" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <textarea x-model="form.description" rows="3" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500"></textarea>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Tags (comma-separated)</label>
+            <input type="text" x-model="form.tags" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+          </div>
+          <button @click="submitRecord()" :disabled="storeLoading"
+                  class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
+            <div x-show="storeLoading" class="spinner" style="width:1rem;height:1rem;border-width:2px"></div>
+            Record Decision
+          </button>
+          <div x-show="storeResult" class="bg-green-50 border border-green-200 rounded-lg p-3 text-sm">
+            Decision recorded — ID: <code class="text-xs bg-green-100 px-1 rounded" x-text="storeResult?.id"></code>
+          </div>
+        </div>
+
+        <!-- Search tab -->
+        <div x-show="activeTab === 'search'" class="max-w-2xl space-y-4">
+          <div class="flex gap-3">
+            <input type="text" x-model="searchQuery" @keydown.enter="submitSearch()" placeholder="Search decisions…"
+                   class="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+            <button @click="submitSearch()" :disabled="searchLoading"
+                    class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">Search</button>
+          </div>
+          <div x-show="searchResults" class="space-y-2">
+            <template x-for="d in (Array.isArray(searchResults) ? searchResults : [])" :key="d.id">
+              <div class="bg-white rounded-lg border border-gray-200 p-4">
+                <div class="flex items-start justify-between">
+                  <h3 class="text-sm font-medium text-gray-900" x-text="d.title"></h3>
+                  <span class="badge badge-active text-xs" x-text="d.status"></span>
+                </div>
+                <p class="text-xs text-gray-600 mt-1" x-text="d.description"></p>
+                <p class="text-xs text-gray-400 mt-1" x-text="d.decided_at"></p>
+              </div>
+            </template>
+            <p x-show="Array.isArray(searchResults) && searchResults.length === 0" class="text-sm text-gray-400">No decisions found.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- =============== INGESTION =============== -->
+      <section x-show="$store.router.page === 'ingestion'" x-data="ingestionPage" x-cloak>
+        <h2 class="text-xl font-semibold text-gray-900 mb-4">Ingestion</h2>
+
+        <div class="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Source Type</label>
+            <select x-model="form.source_type" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+              <option value="document">Document</option>
+              <option value="meeting">Meeting</option>
+              <option value="chat">Chat</option>
+              <option value="email">Email</option>
+              <option value="news">News</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Content</label>
+            <textarea x-model="form.content" rows="8" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500" placeholder="Paste content to ingest…"></textarea>
+          </div>
+          <div class="flex gap-3">
+            <button @click="submit()" :disabled="loading"
+                    class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
+              <div x-show="loading" class="spinner" style="width:1rem;height:1rem;border-width:2px"></div>
+              Ingest
+            </button>
+            <button @click="reset()" class="text-sm text-gray-500 hover:text-gray-700">Reset</button>
+          </div>
+        </div>
+
+        <div x-show="result" class="mt-4 max-w-2xl bg-white rounded-lg border border-gray-200 p-4">
+          <h3 class="text-sm font-medium text-gray-700 mb-2">Ingestion Results</h3>
+          <dl class="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+            <dt class="text-gray-500">Source Type</dt><dd class="font-medium" x-text="result?.source_type"></dd>
+            <dt class="text-gray-500">Experiences Created</dt><dd class="font-medium" x-text="result?.experiences_created"></dd>
+            <dt class="text-gray-500">Entities Resolved</dt><dd class="font-medium" x-text="result?.entities_resolved"></dd>
+            <dt class="text-gray-500">Decisions Detected</dt><dd class="font-medium" x-text="result?.decisions_detected"></dd>
+            <dt class="text-gray-500">Action Items</dt><dd class="font-medium" x-text="result?.action_items_detected"></dd>
+          </dl>
+          <div x-show="result?.errors?.length > 0" class="mt-2 text-xs text-red-600">
+            <p class="font-medium">Errors:</p>
+            <template x-for="err in result?.errors || []"><p x-text="err"></p></template>
+          </div>
+        </div>
+      </section>
+
+      <!-- =============== ENTITIES =============== -->
+      <section x-show="$store.router.page === 'entities'" x-data="entitiesPage" x-cloak>
+        <h2 class="text-xl font-semibold text-gray-900 mb-4">Entities</h2>
+
+        <!-- Sub-tabs -->
+        <div class="flex border-b border-gray-200 mb-4 max-w-3xl">
+          <template x-for="tab in ['resolve', 'register', 'bootstrap', 'rules']" :key="tab">
+            <button @click="activeTab = tab; if (tab === 'rules') loadRules()"
+                    class="px-4 py-2 text-sm font-medium border-b-2 -mb-px capitalize"
+                    :class="activeTab === tab ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500'"
+                    x-text="tab"></button>
+          </template>
+        </div>
+
+        <!-- Resolve -->
+        <div x-show="activeTab === 'resolve'" class="max-w-3xl space-y-4">
+          <div class="bg-white rounded-lg border border-gray-200 p-6 space-y-4">
+            <textarea x-model="resolveText" rows="4" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500" placeholder="Enter text to resolve entities…"></textarea>
+            <button @click="submitResolve()" :disabled="resolveLoading"
+                    class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
+              <div x-show="resolveLoading" class="spinner" style="width:1rem;height:1rem;border-width:2px"></div>
+              Resolve
+            </button>
+          </div>
+          <div x-show="resolveResult" class="space-y-3">
+            <div x-show="resolveResult?.resolved?.length">
+              <h3 class="text-sm font-medium text-gray-700 mb-2">Resolved</h3>
+              <div class="space-y-1">
+                <template x-for="(r, i) in resolveResult?.resolved || []" :key="i">
+                  <div class="bg-white rounded border border-gray-200 px-3 py-2 text-sm flex items-center gap-3">
+                    <span class="font-medium" x-text="r.text"></span>
+                    <span class="text-gray-400">→</span>
+                    <code class="text-xs text-indigo-600" x-text="r.canonical_id"></code>
+                    <span class="badge badge-validated text-xs" x-text="r.entity_type"></span>
+                    <span class="text-xs text-gray-400 ml-auto" x-text="(r.confidence * 100).toFixed(0) + '%'"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+            <div x-show="resolveResult?.unresolved?.length">
+              <h3 class="text-sm font-medium text-gray-700 mb-2">Unresolved</h3>
+              <div class="flex flex-wrap gap-2">
+                <template x-for="u in resolveResult?.unresolved || []" :key="u">
+                  <span class="badge badge-contested text-xs" x-text="u"></span>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Register -->
+        <div x-show="activeTab === 'register'" class="bg-white rounded-lg border border-gray-200 p-6 max-w-lg space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Alias</label>
+            <input type="text" x-model="regForm.alias" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g. Bob">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Canonical ID</label>
+            <input type="text" x-model="regForm.canonical_id" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g. Robert Smith">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Entity Type</label>
+            <select x-model="regForm.entity_type" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+              <option value="person">Person</option>
+              <option value="organization">Organization</option>
+              <option value="project">Project</option>
+              <option value="technology">Technology</option>
+              <option value="alias">Alias</option>
+            </select>
+          </div>
+          <button @click="submitRegister()" :disabled="regLoading"
+                  class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
+            <div x-show="regLoading" class="spinner" style="width:1rem;height:1rem;border-width:2px"></div>
+            Register
+          </button>
+        </div>
+
+        <!-- Bootstrap -->
+        <div x-show="activeTab === 'bootstrap'" class="max-w-3xl space-y-4">
+          <div class="bg-white rounded-lg border border-gray-200 p-6 space-y-4">
+            <p class="text-sm text-gray-600">Paste a sample document and the LLM will generate entity detection/extraction rules from it.</p>
+            <textarea x-model="bootstrapText" rows="6" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500" placeholder="Paste sample document text…"></textarea>
+            <button @click="submitBootstrap()" :disabled="bootstrapLoading"
+                    class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
+              <div x-show="bootstrapLoading" class="spinner" style="width:1rem;height:1rem;border-width:2px"></div>
+              Bootstrap
+            </button>
+          </div>
+          <div x-show="bootstrapResult" class="bg-white rounded-lg border border-gray-200 p-4 text-sm">
+            <dl class="grid grid-cols-3 gap-4">
+              <div><dt class="text-gray-500 text-xs">Detectors</dt><dd class="text-lg font-semibold" x-text="bootstrapResult?.detectors_created"></dd></div>
+              <div><dt class="text-gray-500 text-xs">Extractors</dt><dd class="text-lg font-semibold" x-text="bootstrapResult?.extractors_created"></dd></div>
+              <div><dt class="text-gray-500 text-xs">Aliases</dt><dd class="text-lg font-semibold" x-text="bootstrapResult?.aliases_discovered"></dd></div>
+            </dl>
+          </div>
+        </div>
+
+        <!-- Rules -->
+        <div x-show="activeTab === 'rules'" class="max-w-3xl space-y-4">
+          <div class="flex items-center gap-3 mb-2">
+            <button @click="loadRules()" :disabled="rulesLoading" class="text-sm text-indigo-600 hover:text-indigo-800">Refresh</button>
+            <button @click="learnRules()" :disabled="learnLoading"
+                    class="bg-indigo-600 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
+              <div x-show="learnLoading" class="spinner" style="width:0.875rem;height:0.875rem;border-width:2px"></div>
+              Learn Rules
+            </button>
+          </div>
+          <div x-show="rulesLoading" class="flex items-center gap-2 text-gray-500"><div class="spinner"></div> Loading…</div>
+          <div x-show="rules && !rulesLoading">
+            <p class="text-sm text-gray-500 mb-2"><span x-text="rules?.total || 0"></span> total rules</p>
+            <div x-show="rules?.detectors?.length" class="mb-4">
+              <h3 class="text-sm font-medium text-gray-700 mb-2">Detectors</h3>
+              <div class="space-y-1">
+                <template x-for="d in rules?.detectors || []" :key="d.id">
+                  <div class="bg-white rounded border border-gray-200 px-3 py-2 text-xs flex items-center gap-3">
+                    <code class="font-mono text-indigo-600 flex-1 truncate" x-text="d.pattern"></code>
+                    <span class="text-gray-400" x-text="d.description || ''"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+            <div x-show="rules?.extractors?.length">
+              <h3 class="text-sm font-medium text-gray-700 mb-2">Extractors</h3>
+              <div class="space-y-1">
+                <template x-for="e in rules?.extractors || []" :key="e.id">
+                  <div class="bg-white rounded border border-gray-200 px-3 py-2 text-xs flex items-center gap-3">
+                    <code class="font-mono text-indigo-600 flex-1 truncate" x-text="e.pattern"></code>
+                    <span class="badge badge-validated" x-text="e.entity_type"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =============== REFLECTION =============== -->
+      <section x-show="$store.router.page === 'reflection'" x-data="reflectionPage" x-cloak>
+        <h2 class="text-xl font-semibold text-gray-900 mb-4">Reflection</h2>
+
+        <div class="bg-white rounded-lg border border-gray-200 p-6 max-w-lg space-y-4">
+          <p class="text-sm text-gray-600">Trigger the reflection engine to process recent experiences and derive new beliefs.</p>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Max Experiences: <span x-text="maxExperiences"></span></label>
+            <input type="range" x-model.number="maxExperiences" min="10" max="500" step="10" class="w-full">
+          </div>
+          <div class="flex items-center gap-2">
+            <input type="checkbox" x-model="autoCommit" id="autoCommit" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+            <label for="autoCommit" class="text-sm text-gray-700">Auto-commit new beliefs</label>
+          </div>
+          <button @click="submit()" :disabled="loading"
+                  class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
+            <div x-show="loading" class="spinner" style="width:1rem;height:1rem;border-width:2px"></div>
+            Run Reflection
+          </button>
+        </div>
+
+        <div x-show="result" class="mt-4 max-w-lg bg-white rounded-lg border border-gray-200 p-4">
+          <h3 class="text-sm font-medium text-gray-700 mb-2">Results</h3>
+          <dl class="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+            <dt class="text-gray-500">Experiences Processed</dt><dd class="font-medium" x-text="result?.experiences_processed"></dd>
+            <dt class="text-gray-500">Patterns Found</dt><dd class="font-medium" x-text="result?.patterns_found"></dd>
+            <dt class="text-gray-500">New Beliefs</dt><dd class="font-medium" x-text="result?.new_beliefs"></dd>
+            <dt class="text-gray-500">Updated Beliefs</dt><dd class="font-medium" x-text="result?.updated_beliefs"></dd>
+            <dt class="text-gray-500">Contradictions</dt><dd class="font-medium" x-text="result?.contradictions"></dd>
+          </dl>
+          <div x-show="result?.summary" class="mt-3 p-3 bg-gray-50 rounded text-sm text-gray-700" x-text="result?.summary"></div>
+        </div>
+      </section>
+
+      <!-- =============== SECURITY =============== -->
+      <section x-show="$store.router.page === 'security'" x-data="securityPage" x-cloak>
+        <h2 class="text-xl font-semibold text-gray-900 mb-4">Security / Forget</h2>
+
+        <div class="bg-white rounded-lg border border-gray-200 p-6 max-w-lg space-y-4">
+          <p class="text-sm text-gray-600">GDPR data deletion. Select a scope and provide the required identifier.</p>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Scope</label>
+            <select x-model="form.scope" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+              <option value="entity">Entity</option>
+              <option value="session">Session</option>
+              <option value="topic">Topic</option>
+              <option value="query">Query</option>
+              <option value="all">All (danger)</option>
+            </select>
+          </div>
+
+          <div x-show="form.scope === 'entity'">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Entity ID</label>
+            <input type="text" x-model="form.entity_id" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+          </div>
+
+          <div x-show="form.scope === 'session'">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Session ID</label>
+            <input type="text" x-model="form.session_id" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+          </div>
+
+          <div x-show="form.scope === 'topic'">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Topics (comma-separated)</label>
+            <input type="text" x-model="form.topics" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+          </div>
+
+          <div x-show="form.scope === 'query'">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Query</label>
+            <input type="text" x-model="form.query" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500" placeholder="Semantic search to match items to delete">
+          </div>
+
+          <div x-show="form.scope === 'all'" class="bg-red-50 border border-red-200 rounded-lg p-3">
+            <label class="flex items-center gap-2 text-sm text-red-700">
+              <input type="checkbox" x-model="confirmAll" class="rounded border-red-300 text-red-600 focus:ring-red-500">
+              I confirm I want to delete ALL data for this user
+            </label>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Reason (optional)</label>
+            <input type="text" x-model="form.reason" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500" placeholder="GDPR request, etc.">
+          </div>
+
+          <button @click="submit()" :disabled="loading"
+                  class="text-white px-4 py-2 rounded-md text-sm font-medium disabled:opacity-50 flex items-center gap-2"
+                  :class="form.scope === 'all' ? 'bg-red-600 hover:bg-red-700' : 'bg-indigo-600 hover:bg-indigo-700'">
+            <div x-show="loading" class="spinner" style="width:1rem;height:1rem;border-width:2px"></div>
+            <span x-text="form.scope === 'all' ? 'Delete All Data' : 'Forget'"></span>
+          </button>
+        </div>
+
+        <div x-show="result" class="mt-4 max-w-lg bg-white rounded-lg border border-gray-200 p-4">
+          <dl class="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+            <dt class="text-gray-500">Scope</dt><dd class="font-medium" x-text="result?.scope"></dd>
+            <dt class="text-gray-500">Deleted Count</dt><dd class="font-medium" x-text="result?.deleted_count"></dd>
+            <dt class="text-gray-500">Success</dt><dd class="font-medium" x-text="result?.success ? 'Yes' : 'No'"></dd>
+          </dl>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<!-- Scripts -->
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<script src="/static/js/api.js"></script>
+<script src="/static/js/app.js"></script>
+<script src="/static/js/pages/dashboard.js"></script>
+<script src="/static/js/pages/memory-store.js"></script>
+<script src="/static/js/pages/memory-recall.js"></script>
+<script src="/static/js/pages/memory-query.js"></script>
+<script src="/static/js/pages/memory-detail.js"></script>
+<script src="/static/js/pages/working-memory.js"></script>
+<script src="/static/js/pages/decisions.js"></script>
+<script src="/static/js/pages/ingestion.js"></script>
+<script src="/static/js/pages/reflection.js"></script>
+<script src="/static/js/pages/entities.js"></script>
+<script src="/static/js/pages/security.js"></script>
+</body>
+</html>

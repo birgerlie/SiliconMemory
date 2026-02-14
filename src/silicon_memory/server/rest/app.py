@@ -5,10 +5,13 @@ from __future__ import annotations
 import logging
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from silicon_memory.llm.provider import SiliconLLMProvider
 from silicon_memory.llm.scheduler import LLMScheduler
@@ -149,5 +152,24 @@ def create_app(config: ServerConfig) -> FastAPI:
     app.include_router(reflect.router, prefix=prefix, tags=["reflection"])
     app.include_router(security.router, prefix=prefix, tags=["security"])
     app.include_router(entities.router, prefix=prefix, tags=["entities"])
+
+    # Static files & SPA catch-all
+    static_dir = Path(__file__).resolve().parent.parent / "static"
+    if static_dir.is_dir():
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+        index_html = static_dir / "index.html"
+
+        @app.get("/", include_in_schema=False)
+        async def spa_root() -> FileResponse:
+            return FileResponse(str(index_html), media_type="text/html")
+
+        @app.get("/{path:path}", include_in_schema=False)
+        async def spa_fallback(path: str) -> FileResponse:
+            # Serve actual static files if they exist, otherwise SPA index
+            candidate = static_dir / path
+            if candidate.is_file() and static_dir in candidate.resolve().parents:
+                return FileResponse(str(candidate))
+            return FileResponse(str(index_html), media_type="text/html")
 
     return app
