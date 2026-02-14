@@ -1,0 +1,79 @@
+# Silicon Memory
+
+> Cognitive memory system for LLM augmentation with temporal awareness, belief tracking, and self-learning entity resolution.
+
+## What This Is
+
+A Python library and server that provides four-layer cognitive memory for AI systems:
+- Semantic memory (beliefs as subject-predicate-object triplets with confidence)
+- Episodic memory (experiences with outcomes and causal chains)
+- Procedural memory (how-to with steps and success tracking)
+- Working memory (key-value with TTL)
+
+Built on top: reflection engine (experiences → beliefs), entity resolution (3-pass regex + LLM), salience profiles (context-aware retrieval weighting), graph queries, decision records, GDPR-compliant forgetting.
+
+Storage: SiliconDB (Apple Silicon-native, mmap + WAL, Metal GPU, auto-embedding, graph).
+
+## Python SDK
+
+```python
+from silicon_memory import SiliconMemory, RecallContext, Belief, Triplet, Source
+from silicon_memory.security.types import UserContext
+
+user = UserContext(user_id="alice", tenant_id="acme")
+async with SiliconMemory("/path/to/db", user_context=user) as memory:
+    # Store
+    await memory.commit_belief(Belief(id=uuid4(), triplet=Triplet("Python", "is", "language"), confidence=0.95, source=Source(id="docs", type="documentation")))
+    # Recall
+    result = await memory.recall(RecallContext(query="Python", salience_profile="debugging"))
+    # Reflect
+    from silicon_memory import ReflectionEngine
+    engine = ReflectionEngine(memory)
+    await engine.reflect()
+```
+
+## REST API
+
+19 endpoints at /api/v1. Key ones:
+
+POST /store {content, type?, confidence?} → {id, type, stored}
+POST /recall {query, salience_profile?, max_facts?} → {facts[], experiences[], procedures[], working_context}
+POST /query {query, limit?} → {beliefs[], count}
+POST /ingest {source_type, content} → {experiences_created, entities_resolved}
+POST /reflect {max_experiences?} → {patterns_found, new_beliefs}
+POST /entities/bootstrap {text} → {detectors_created, extractors_created}
+POST /entities/resolve {text} → {resolved[], unresolved[]}
+POST /forget {scope, entity_id?} → {deleted_count}
+GET /health → {status, version}
+
+Full spec: API.md
+
+## MCP Tools
+
+10 tools for LLM clients: memory_recall, memory_store, memory_get, memory_query, what_do_you_know, working_memory, decision_store, decision_recall, context_switch, forget.
+
+Start MCP server: silicon-memory-server --mode mcp
+
+## Entity Resolution
+
+Three-pass architecture for domain-agnostic entity detection:
+1. Detect — broad regex patterns scan full text for candidates (microseconds)
+2. Extract — precise regex patterns per candidate determine type and normalize
+3. Disambiguate — context embedding comparison when multiple extractors match
+
+Rules are generated offline by LLM from sample documents (bootstrap endpoint). No LLM calls at runtime.
+
+## Key Types
+
+Belief: id, content, triplet (subject/predicate/object), confidence, source, status, tags
+Experience: id, content, occurred_at, outcome, session_id, causal_parent
+Procedure: id, name, trigger, steps, confidence, success_count/failure_count
+RecallContext: query, salience_profile, max_facts, min_confidence
+UserContext: user_id, tenant_id (required for all operations)
+
+## Links
+
+- Source: src/silicon_memory/
+- API spec: API.md
+- Tests: tests/
+- SiliconDB: deps/silicondb/
