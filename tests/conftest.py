@@ -491,6 +491,21 @@ def silicon_memory(temp_db_path: Path, mock_embedder: MockEmbedder):
                     errors=[f"Ingestion failed: {e}"],
                 )
 
+        async def get_recent_experiences(self, hours=24, limit=100):
+            return await self._backend.get_recent_experiences(hours, limit)
+
+        async def create_snapshot(self, task_context, llm_provider=None):
+            from silicon_memory.snapshot.service import SnapshotService
+            service = SnapshotService(
+                memory=self, backend=self._backend, llm_provider=llm_provider,
+            )
+            return await service.create_snapshot(task_context, llm_provider)
+
+        async def get_latest_snapshot(self, task_context):
+            from silicon_memory.snapshot.service import SnapshotService
+            service = SnapshotService(memory=self, backend=self._backend)
+            return await service.get_latest_snapshot(task_context)
+
         def close(self):
             self._backend._db.close()
 

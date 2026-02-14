@@ -8,6 +8,7 @@ use cases like decision support, exploration, and context recall.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -44,11 +45,12 @@ class SalienceProfile:
                 f"got '{self.entropy_direction}'"
             )
 
-    def to_search_weights(self) -> dict[str, float]:
+    def to_search_weights(self) -> dict[str, Any]:
         """Convert to a dictionary suitable for SiliconDB search configuration.
 
         Returns:
-            Dictionary mapping weight names to values
+            Dictionary mapping weight names to values.  Includes entropy
+            config so the recall pipeline can apply post-retrieval reranking.
         """
         return {
             "vector": self.vector_weight,
@@ -57,6 +59,8 @@ class SalienceProfile:
             "temporal_half_life_hours": self.temporal_half_life_days * 24,
             "confidence": self.confidence_weight,
             "graph_proximity": self.graph_proximity_weight,
+            "entropy_weight": self.entropy_weight,
+            "entropy_direction": self.entropy_direction,
         }
 
     @property

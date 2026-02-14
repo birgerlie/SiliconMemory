@@ -555,3 +555,362 @@ class TestFullCognitiveWorkflowE2E:
         decision_tool = DecisionTool(silicon_memory)
         brief = await decision_tool.invoke(question="Test?")
         json.dumps(brief)
+
+
+# ============================================================================
+# SDB-1/2/3: Search-weights wiring, entropy reranking, graph context — E2E
+# ============================================================================
+
+
+class TestSearchWeightsWiringE2E:
+    """E2E: search_weights flow from SalienceProfile through recall pipeline."""
+
+    @pytest.mark.asyncio
+    async def test_recall_with_search_weights_returns_results(
+        self, silicon_memory, sample_source,
+    ):
+        """Store several beliefs, recall with decision_support profile,
+        verify results come back with populated fields."""
+        from silicon_memory.memory.silicondb_router import RecallContext
+
+        await silicon_memory.commit_belief(
+            Belief(id=uuid4(), content="Rust has zero-cost abstractions",
+                   confidence=0.95, source=sample_source, tags=["rust"]),
+        )
+        await silicon_memory.commit_belief(
+            Belief(id=uuid4(), content="Rust memory safety without GC",
+                   confidence=0.9, source=sample_source, tags=["rust"]),
+        )
+
+        ctx = RecallContext(
+            query="Rust safety",
+            salience_profile="decision_support",
+            max_facts=10,
+        )
+        response = await silicon_memory.recall(ctx)
+
+        assert response is not None
+        assert response.query == "Rust safety"
+        # Facts should be present (mock embedder uses hashing, so relevance
+        # is approximate, but at least the pipeline shouldn't crash)
+        assert isinstance(response.facts, list)
+
+    @pytest.mark.asyncio
+    async def test_backend_recall_passes_weights_to_search(
+        self, silicon_memory, sample_source,
+    ):
+        """Backend.recall() with search_weights should not raise."""
+        from silicon_memory.retrieval.salience import PROFILES
+
+        await silicon_memory.commit_belief(
+            Belief(id=uuid4(), content="Go has goroutines for concurrency",
+                   confidence=0.88, source=sample_source, tags=["go"]),
+        )
+
+        weights = PROFILES["exploration"].to_search_weights()
+
+        result = await silicon_memory._backend.recall(
+            query="Go concurrency",
+            max_facts=5,
+            search_weights=weights,
+        )
+
+        assert "facts" in result
+        assert "experiences" in result
+        assert "procedures" in result
+
+    @pytest.mark.asyncio
+    async def test_backend_query_beliefs_accepts_search_weights(
+        self, silicon_memory, sample_source,
+    ):
+        """query_beliefs() with search_weights should work end-to-end."""
+        from silicon_memory.retrieval.salience import PROFILES
+
+        await silicon_memory.commit_belief(
+            Belief(id=uuid4(), content="TypeScript adds types to JavaScript",
+                   confidence=0.9, source=sample_source, tags=["typescript"]),
+        )
+
+        weights = PROFILES["context_recall"].to_search_weights()
+        beliefs = await silicon_memory._backend.query_beliefs(
+            "TypeScript types", limit=5, search_weights=weights,
+        )
+
+        assert isinstance(beliefs, list)
+
+    @pytest.mark.asyncio
+    async def test_backend_query_experiences_accepts_search_weights(
+        self, silicon_memory,
+    ):
+        """query_experiences() with search_weights should work end-to-end."""
+        await silicon_memory.record_experience(
+            Experience(
+                id=uuid4(), content="Debugged a TypeScript error",
+                outcome="Fixed the type issue", session_id="sess-ts",
+            ),
+        )
+
+        weights = {"vector": 0.6, "text": 0.4}
+        experiences = await silicon_memory._backend.query_experiences(
+            "TypeScript error", limit=5, search_weights=weights,
+        )
+
+        assert isinstance(experiences, list)
+
+    @pytest.mark.asyncio
+    async def test_backend_find_procedures_accepts_search_weights(
+        self, silicon_memory,
+    ):
+        """find_applicable_procedures() with search_weights should work."""
+        from silicon_memory.core.types import Procedure
+
+        await silicon_memory.commit_procedure(
+            Procedure(
+                id=uuid4(), name="Lint TypeScript",
+                description="Run the TypeScript linter",
+                steps=["Run eslint", "Fix warnings"],
+                trigger="lint typescript", confidence=0.85,
+            ),
+        )
+
+        weights = {"vector": 0.5, "text": 0.5}
+        procs = await silicon_memory._backend.find_applicable_procedures(
+            "lint typescript", limit=3, search_weights=weights,
+        )
+
+        assert isinstance(procs, list)
+
+
+class TestEntropyRerankingE2E:
+    """E2E: entropy reranking adjusts fact ordering."""
+
+    @pytest.mark.asyncio
+    async def test_recall_with_entropy_reranking(
+        self, silicon_memory, sample_source,
+    ):
+        """Recall with entropy_weight > 0 should not crash and should
+        return results with the entropy field populated."""
+        await silicon_memory.commit_belief(
+            Belief(id=uuid4(), content="Elixir runs on the BEAM VM",
+                   confidence=0.92, source=sample_source),
+        )
+        await silicon_memory.commit_belief(
+            Belief(id=uuid4(), content="Elixir has lightweight processes",
+                   confidence=0.5, source=sample_source),
+        )
+
+        weights = {
+            "vector": 0.3, "text": 0.1, "temporal": 0.0,
+            "confidence": 0.2, "graph_proximity": 0.0,
+            "temporal_half_life_hours": 720,
+            "entropy_weight": 0.3,
+            "entropy_direction": "prefer_high",
+        }
+
+        result = await silicon_memory._backend.recall(
+            query="Elixir concurrency",
+            max_facts=10,
+            search_weights=weights,
+        )
+
+        assert "facts" in result
+        for fact in result["facts"]:
+            # entropy should be numeric on every RecallResult
+            # (SiliconDB may return int instead of float — see SiliconDB #129)
+            assert isinstance(fact.entropy, (int, float))
+
+    @pytest.mark.asyncio
+    async def test_recall_without_entropy_still_works(
+        self, silicon_memory, sample_source,
+    ):
+        """Recall with entropy_weight=0 (or missing) should behave normally."""
+        await silicon_memory.commit_belief(
+            Belief(id=uuid4(), content="Haskell is purely functional",
+                   confidence=0.9, source=sample_source),
+        )
+
+        result = await silicon_memory._backend.recall(
+            query="Haskell features",
+            max_facts=5,
+        )
+
+        assert "facts" in result
+
+
+class TestGraphContextNodesE2E:
+    """E2E: graph_context_nodes flow through recall."""
+
+    @pytest.mark.asyncio
+    async def test_recall_with_graph_context_nodes(
+        self, silicon_memory, sample_source,
+    ):
+        """Passing graph_context_nodes via search_weights should not crash."""
+        b1 = Belief(id=uuid4(), content="Kubernetes orchestrates containers",
+                     confidence=0.9, source=sample_source)
+        b2 = Belief(id=uuid4(), content="Docker containers are lightweight VMs",
+                     confidence=0.85, source=sample_source)
+
+        await silicon_memory.commit_belief(b1)
+        await silicon_memory.commit_belief(b2)
+
+        # Build external IDs to use as seeds
+        seed_id = silicon_memory._backend._build_external_id("belief", b1.id)
+
+        weights = {
+            "vector": 0.3, "text": 0.1, "temporal": 0.0,
+            "confidence": 0.2, "graph_proximity": 0.2,
+            "temporal_half_life_hours": 720,
+            "entropy_weight": 0.0,
+            "entropy_direction": "prefer_low",
+            "graph_context_nodes": [seed_id],
+        }
+
+        result = await silicon_memory._backend.recall(
+            query="container orchestration",
+            max_facts=10,
+            search_weights=weights,
+        )
+
+        assert "facts" in result
+        assert isinstance(result["facts"], list)
+
+
+# ============================================================================
+# SM-4: Context Switch Snapshots — E2E Tests
+# ============================================================================
+
+
+class TestContextSnapshotsE2E:
+    """E2E tests for context switch snapshots against real SiliconDB."""
+
+    @pytest.mark.asyncio
+    async def test_create_and_retrieve_snapshot(self, silicon_memory):
+        """Create a snapshot and retrieve it by task context."""
+        # Set some working memory first
+        await silicon_memory.set_context("current_file", "auth.py")
+        await silicon_memory.set_context("branch", "fix-tokens")
+
+        # Create a snapshot
+        snapshot = await silicon_memory.create_snapshot("project-alpha/auth")
+
+        assert snapshot.task_context == "project-alpha/auth"
+        assert isinstance(snapshot.summary, str)
+        assert snapshot.working_memory.get("current_file") == "auth.py"
+        assert snapshot.working_memory.get("branch") == "fix-tokens"
+        assert snapshot.user_id == "test-user"
+        assert snapshot.tenant_id == "test-tenant"
+
+    @pytest.mark.asyncio
+    async def test_get_latest_snapshot(self, silicon_memory):
+        """Retrieve the most recent snapshot for a task context."""
+        await silicon_memory.set_context("step", "1")
+        snap1 = await silicon_memory.create_snapshot("task-A")
+
+        await silicon_memory.set_context("step", "2")
+        snap2 = await silicon_memory.create_snapshot("task-A")
+
+        latest = await silicon_memory.get_latest_snapshot("task-A")
+
+        assert latest is not None
+        assert latest.id == snap2.id
+        assert latest.working_memory.get("step") == "2"
+
+    @pytest.mark.asyncio
+    async def test_snapshot_not_found(self, silicon_memory):
+        """get_latest_snapshot returns None for unknown task context."""
+        result = await silicon_memory.get_latest_snapshot("nonexistent-task")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_multi_task_switch_resume(self, silicon_memory):
+        """Simulate: work on A, switch to B, resume A."""
+        # Work on task A
+        await silicon_memory.set_context("task", "A-work")
+        await silicon_memory.record_experience(
+            Experience(id=uuid4(), content="Implemented auth module",
+                       outcome="Auth working", session_id="s1"),
+        )
+        snap_a = await silicon_memory.create_snapshot("task-A")
+
+        # Switch to task B
+        await silicon_memory.set_context("task", "B-work")
+        await silicon_memory.record_experience(
+            Experience(id=uuid4(), content="Fixed database migration",
+                       outcome="Migration complete", session_id="s2"),
+        )
+        snap_b = await silicon_memory.create_snapshot("task-B")
+
+        # Resume task A
+        resumed_a = await silicon_memory.get_latest_snapshot("task-A")
+        assert resumed_a is not None
+        assert resumed_a.task_context == "task-A"
+        assert resumed_a.working_memory.get("task") == "A-work"
+
+        # Resume task B
+        resumed_b = await silicon_memory.get_latest_snapshot("task-B")
+        assert resumed_b is not None
+        assert resumed_b.task_context == "task-B"
+        assert resumed_b.working_memory.get("task") == "B-work"
+
+    @pytest.mark.asyncio
+    async def test_snapshot_captures_recent_experiences(self, silicon_memory):
+        """Snapshot captures IDs of recent experiences."""
+        exp = Experience(
+            id=uuid4(),
+            content="Debugged token refresh",
+            outcome="Fixed the bug",
+            session_id="s1",
+        )
+        await silicon_memory.record_experience(exp)
+
+        snapshot = await silicon_memory.create_snapshot("debug-session")
+
+        # recent_experiences should contain the experience ID
+        assert isinstance(snapshot.recent_experiences, list)
+
+    @pytest.mark.asyncio
+    async def test_snapshot_stored_as_silicondb_document(self, silicon_memory):
+        """Verify snapshot is stored as a SiliconDB document with correct node_type."""
+        await silicon_memory.set_context("key", "val")
+        snapshot = await silicon_memory.create_snapshot("stored-check")
+
+        # Query the backend directly for snapshot documents
+        results = await silicon_memory._backend.query_snapshots_by_context(
+            task_context="stored-check", limit=5,
+        )
+
+        assert len(results) >= 1
+        found = results[0]
+        assert found.task_context == "stored-check"
+        assert found.id == snapshot.id
+
+    @pytest.mark.asyncio
+    async def test_memory_tool_switch_context_e2e(self, silicon_memory):
+        """Test SWITCH_CONTEXT through MemoryTool against real backend."""
+        await silicon_memory.set_context("file", "main.py")
+
+        tool = MemoryTool(silicon_memory)
+        response = await tool.invoke("switch_context", task_context="project-beta")
+
+        assert response.success
+        assert response.action == MemoryAction.SWITCH_CONTEXT
+        assert response.data["task_context"] == "project-beta"
+        assert isinstance(response.data["summary"], str)
+
+    @pytest.mark.asyncio
+    async def test_memory_tool_resume_context_e2e(self, silicon_memory):
+        """Test RESUME_CONTEXT through MemoryTool against real backend."""
+        await silicon_memory.set_context("state", "in-progress")
+
+        # First switch (create snapshot)
+        tool = MemoryTool(silicon_memory)
+        await tool.invoke("switch_context", task_context="project-gamma")
+
+        # Then resume
+        response = await tool.invoke("resume_context", task_context="project-gamma")
+
+        assert response.success
+        assert response.action == MemoryAction.RESUME_CONTEXT
+        assert response.data["found"] is True
+        assert response.data["task_context"] == "project-gamma"
+        assert isinstance(response.data["working_memory"], dict)

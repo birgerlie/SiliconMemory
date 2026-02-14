@@ -19,6 +19,8 @@ from silicon_memory.core.types import (
 from silicon_memory.ingestion.types import IngestionAdapter, IngestionResult
 from silicon_memory.retrieval.salience import PROFILES, SalienceProfile
 from silicon_memory.core.decision import Decision, DecisionStatus
+from silicon_memory.snapshot.types import ContextSnapshot, SnapshotConfig
+from silicon_memory.snapshot.service import SnapshotService
 from silicon_memory.storage.silicondb_backend import SiliconDBBackend, SiliconDBConfig
 from silicon_memory.temporal.decay import DecayConfig
 from silicon_memory.security.types import (
@@ -73,6 +75,7 @@ class RecallContext:
     max_procedures: int = 5
     source_type: str | None = None
     salience_profile: SalienceProfile | str | None = None
+    graph_context_nodes: list[str] | None = None
 
 
 @dataclass
@@ -137,6 +140,8 @@ class SiliconMemory:
         embedder_model: str = "base",
         decay_config: DecayConfig | None = None,
         security_config: SecurityConfig | None = None,
+        snapshot_config: SnapshotConfig | None = None,
+        llm_provider: Any = None,
     ) -> None:
         """Initialize SiliconMemory.
 
@@ -149,6 +154,8 @@ class SiliconMemory:
             embedder_model: Embedding model to use
             decay_config: Optional decay configuration
             security_config: Optional security configuration
+            snapshot_config: Optional snapshot configuration
+            llm_provider: Optional LLM provider for snapshot summaries
         """
         if not user_context:
             raise ValueError("user_context is required")
@@ -173,6 +180,14 @@ class SiliconMemory:
             self._backend,
             retention_days=self._security_config.audit_retention_days,
             log_reads=self._security_config.audit_read_operations,
+        )
+
+        # Initialize snapshot service
+        self._snapshot_service = SnapshotService(
+            memory=self,
+            backend=self._backend,
+            config=snapshot_config,
+            llm_provider=llm_provider,
         )
 
         # User preferences (loaded on demand)
@@ -222,6 +237,14 @@ class SiliconMemory:
             if isinstance(profile, SalienceProfile):
                 search_weights = profile.to_search_weights()
 
+        # Resolve graph context seeds for PPR when graph_proximity is active
+        if search_weights and search_weights.get("graph_proximity", 0) > 0:
+            seeds = ctx.graph_context_nodes
+            if not seeds:
+                seeds = await self._resolve_context_seeds(ctx.query)
+            if seeds:
+                search_weights["graph_context_nodes"] = seeds
+
         recall_kwargs: dict[str, Any] = {
             "query": ctx.query,
             "max_facts": ctx.max_facts,
@@ -244,6 +267,27 @@ class SiliconMemory:
             query=result["query"],
             as_of=result["as_of"],
         )
+
+    async def _resolve_context_seeds(self, query: str) -> list[str]:
+        """Auto-resolve PPR seed nodes from working memory and query.
+
+        Looks up the ``current_topic`` key in working memory and combines it
+        with a lightweight search against beliefs to produce a small set of
+        external IDs that can serve as PPR seeds.
+        """
+        seeds: list[str] = []
+
+        # Use current_topic from working memory if available
+        current_topic = await self._backend.get_working("current_topic")
+        search_query = f"{query} {current_topic}" if current_topic else query
+
+        # Find a handful of matching belief nodes to use as seeds
+        beliefs = await self._backend.query_beliefs(search_query, limit=5)
+        for b in beliefs:
+            ext_id = self._backend._build_external_id("belief", b.id)
+            seeds.append(ext_id)
+
+        return seeds
 
     async def what_do_you_know(
         self,
@@ -439,6 +483,59 @@ class SiliconMemory:
             The new Decision, or None if original not found
         """
         return await self._backend.revise_decision(decision_id, new_decision)
+
+    # ========== Context Snapshots ==========
+
+    async def create_snapshot(
+        self,
+        task_context: str,
+        llm_provider: Any = None,
+    ) -> ContextSnapshot:
+        """Create a context snapshot for task switching.
+
+        Captures working memory, recent experiences, and generates a summary
+        (via LLM or rule-based fallback).
+
+        Args:
+            task_context: Identifier for the task being snapshotted
+            llm_provider: Optional LLM provider override
+
+        Returns:
+            The created ContextSnapshot
+        """
+        return await self._snapshot_service.create_snapshot(
+            task_context, llm_provider
+        )
+
+    async def get_latest_snapshot(
+        self,
+        task_context: str,
+    ) -> ContextSnapshot | None:
+        """Get the most recent snapshot for a task context.
+
+        Args:
+            task_context: The task context identifier
+
+        Returns:
+            The latest ContextSnapshot or None
+        """
+        return await self._snapshot_service.get_latest_snapshot(task_context)
+
+    async def list_snapshots(
+        self,
+        task_context: str | None = None,
+        limit: int = 10,
+    ) -> list[ContextSnapshot]:
+        """List snapshots, optionally filtered by task context.
+
+        Args:
+            task_context: Optional filter
+            limit: Maximum results
+
+        Returns:
+            List of ContextSnapshot objects sorted by created_at desc
+        """
+        return await self._snapshot_service.list_snapshots(task_context, limit)
 
     # ========== Cross-Reference API ==========
 

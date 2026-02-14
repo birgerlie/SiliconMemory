@@ -234,6 +234,7 @@ class RecallResult:
     belief_id: UUID | None = None
     triplet: Triplet | None = None
     evidence_count: int = 0
+    entropy: float = 0.0
 
     def as_citation(self) -> str:
         """Format as a citation string."""

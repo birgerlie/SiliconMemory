@@ -274,6 +274,7 @@ class SiliconDBBackend:
         limit: int = 10,
         min_confidence: float = 0.0,
         include_contested: bool = False,
+        search_weights: dict[str, Any] | None = None,
     ) -> list[Belief]:
         """Query beliefs by semantic similarity."""
         # Query triples
@@ -281,7 +282,7 @@ class SiliconDBBackend:
         user_prefix = self._get_user_prefix()
 
         # Use SiliconDB search for semantic similarity
-        search_results = self._db.search(query=query, k=limit * 4)
+        search_results = self._weighted_search(query, k=limit * 4, weights_dict=search_weights)
 
         for r in search_results:
             if self._rget(r, "node_type") != self.NODE_TYPE_BELIEF:
@@ -383,6 +384,45 @@ class SiliconDBBackend:
         except Exception:
             return False
 
+    async def _query_beliefs_with_entropy(
+        self,
+        query: str,
+        limit: int = 10,
+        min_confidence: float = 0.0,
+        include_contested: bool = False,
+        search_weights: dict[str, Any] | None = None,
+    ) -> list[tuple[Belief, float]]:
+        """Like query_beliefs but also returns per-result entropy.
+
+        Used internally by ``recall()`` so entropy can be carried into
+        ``RecallResult`` for post-retrieval reranking.
+        """
+        results: list[tuple[Belief, float]] = []
+
+        search_results = self._weighted_search(query, k=limit * 4, weights_dict=search_weights)
+
+        for r in search_results:
+            if self._rget(r, "node_type") != self.NODE_TYPE_BELIEF:
+                continue
+            if self._rget(r, "probability", 1.0) < min_confidence:
+                continue
+            metadata = self._rget(r, "metadata") or {}
+            if not self._can_access(metadata):
+                continue
+            status = BeliefStatus(metadata.get("status", "provisional"))
+            if status == BeliefStatus.REJECTED:
+                continue
+            if status == BeliefStatus.CONTESTED and not include_contested:
+                continue
+            belief = self._search_result_to_belief(r)
+            if belief:
+                entropy = self._rget(r, "entropy", 0.0) or 0.0
+                results.append((belief, entropy))
+            if len(results) >= limit:
+                break
+
+        return results
+
     # ========== Episodic Memory (Experiences) ==========
 
     async def record_experience(self, experience: Experience) -> None:
@@ -445,9 +485,10 @@ class SiliconDBBackend:
         self,
         query: str,
         limit: int = 10,
+        search_weights: dict[str, Any] | None = None,
     ) -> list[Experience]:
         """Query experiences by semantic similarity."""
-        results = self._db.search(query=query, k=limit * 4)
+        results = self._weighted_search(query, k=limit * 4, weights_dict=search_weights)
 
         experiences = []
         for r in results:
@@ -587,9 +628,10 @@ class SiliconDBBackend:
         context: str,
         limit: int = 5,
         min_confidence: float = 0.0,
+        search_weights: dict[str, Any] | None = None,
     ) -> list[Procedure]:
         """Find procedures applicable to the context."""
-        results = self._db.search(query=context, k=limit * 4)
+        results = self._weighted_search(context, k=limit * 4, weights_dict=search_weights)
 
         procedures = []
         for r in results:
@@ -884,10 +926,17 @@ class SiliconDBBackend:
         """
         now = utc_now()
 
-        # Query all memory types
-        facts = await self.query_beliefs(query, limit=max_facts, min_confidence=min_confidence)
-        experiences = await self.query_experiences(query, limit=max_experiences)
-        procedures = await self.find_applicable_procedures(query, limit=max_procedures)
+        # Query all memory types, forwarding search_weights
+        facts_with_entropy = await self._query_beliefs_with_entropy(
+            query, limit=max_facts, min_confidence=min_confidence,
+            search_weights=search_weights,
+        )
+        experiences = await self.query_experiences(
+            query, limit=max_experiences, search_weights=search_weights,
+        )
+        procedures = await self.find_applicable_procedures(
+            query, limit=max_procedures, search_weights=search_weights,
+        )
 
         # Get working context
         working_context = {}
@@ -896,7 +945,7 @@ class SiliconDBBackend:
 
         # Build recall results with decay applied
         fact_results = []
-        for b in facts:
+        for b, ent in facts_with_entropy:
             conf = b.confidence
             if b.temporal:
                 age = b.temporal.age_seconds(now)
@@ -912,6 +961,7 @@ class SiliconDBBackend:
                 belief_id=b.id,
                 triplet=b.triplet,
                 evidence_count=b.evidence_count,
+                entropy=ent,
             ))
 
         exp_results = []
@@ -935,6 +985,14 @@ class SiliconDBBackend:
                 relevance_score=p.confidence * p.success_rate,
             ))
 
+        # Post-retrieval entropy reranking
+        entropy_weight = (search_weights or {}).get("entropy_weight", 0)
+        if entropy_weight > 0:
+            entropy_direction = (search_weights or {}).get("entropy_direction", "prefer_low")
+            fact_results = self._apply_entropy_reranking(
+                fact_results, entropy_weight, entropy_direction,
+            )
+
         return {
             "facts": fact_results,
             "experiences": exp_results,
@@ -946,6 +1004,124 @@ class SiliconDBBackend:
         }
 
     # ========== Helper Methods ==========
+
+    # Keys from SearchWeights dataclass that the SiliconDB constructor accepts.
+    _SEARCH_WEIGHT_KEYS = frozenset({
+        "vector", "text", "temporal", "confidence", "graph_proximity",
+        "ppr_damping_factor", "ppr_iterations", "temporal_half_life_hours",
+        "fusion", "rrf_k",
+    })
+
+    def _build_search_weights(self, weights_dict: dict[str, Any] | None):
+        """Build a SiliconDB ``SearchWeights`` from a plain dict.
+
+        Filters out keys not accepted by the dataclass (e.g.
+        ``entropy_weight``, ``entropy_direction``, ``graph_context_nodes``)
+        so the remaining kwargs are safe to unpack.
+
+        Returns ``None`` when *weights_dict* is falsy.
+        """
+        if not weights_dict:
+            return None
+        from silicondb.types import SearchWeights
+
+        filtered = {k: v for k, v in weights_dict.items() if k in self._SEARCH_WEIGHT_KEYS}
+        return SearchWeights(**filtered) if filtered else None
+
+    def _weighted_search(
+        self,
+        query: str,
+        k: int,
+        weights_dict: dict[str, Any] | None = None,
+        **extra_kwargs,
+    ) -> list:
+        """Search SiliconDB, routing to the scored endpoint when weights
+        require extended features.
+
+        Works with both the high-level ``SiliconDB`` (which accepts a
+        ``weights`` kwarg) and the low-level ``SiliconDBNative`` (which
+        needs an explicit ``search_scored`` call with a JSON payload).
+        """
+        import json as _json
+
+        sw = self._build_search_weights(weights_dict)
+
+        # High-level API accepts `weights` directly
+        if sw is not None and hasattr(self._db.search, '__func__'):
+            # Check if the search method accepts 'weights' (high-level API)
+            import inspect
+            sig = inspect.signature(self._db.search)
+            if "weights" in sig.parameters:
+                return self._db.search(query=query, k=k, weights=sw, **extra_kwargs)
+
+        # Fall back: if we have extended weights, route via search_scored
+        if sw is not None and hasattr(self._db, "search_scored"):
+            needs_scored = (
+                sw.confidence > 0
+                or sw.graph_proximity > 0
+                or sw.temporal > 0
+                or getattr(sw, "fusion", "weighted_sum") != "weighted_sum"
+            )
+            if needs_scored:
+                scoring = {
+                    "vector": sw.vector,
+                    "text": sw.text,
+                    "temporal": sw.temporal,
+                    "confidence": sw.confidence,
+                    "graph_proximity": sw.graph_proximity,
+                    "ppr_damping_factor": sw.ppr_damping_factor,
+                    "ppr_iterations": sw.ppr_iterations,
+                    "temporal_half_life_hours": sw.temporal_half_life_hours,
+                    "fusion": getattr(sw, "fusion", "weighted_sum"),
+                }
+                return self._db.search_scored(
+                    query=query, k=k,
+                    scoring_json=_json.dumps(scoring),
+                    **extra_kwargs,
+                )
+            # Only basic vector/text weights — use plain search
+            return self._db.search(
+                query=query, k=k,
+                vector_weight=sw.vector, text_weight=sw.text,
+                **extra_kwargs,
+            )
+
+        # No weights at all — plain search
+        return self._db.search(query=query, k=k, **extra_kwargs)
+
+    @staticmethod
+    def _apply_entropy_reranking(
+        results: list[RecallResult],
+        entropy_weight: float,
+        entropy_direction: str,
+    ) -> list[RecallResult]:
+        """Adjust relevance scores using belief entropy from search results.
+
+        SiliconDB ``SearchResult`` populates ``.entropy`` (Shannon entropy of
+        the belief probability).  During ``recall()`` construction we stash
+        that value on ``RecallResult.entropy`` when available.  This method
+        blends it into the existing ``relevance_score``.
+
+        * ``prefer_low``  → high-confidence (low-entropy) results float up.
+        * ``prefer_high`` → uncertain (high-entropy) results float up.
+        """
+        if not results:
+            return results
+
+        for r in results:
+            ent = getattr(r, "entropy", None) or 0.0
+            # Normalise entropy roughly into [0, 1] — Shannon entropy of
+            # a Bernoulli with p=0.5 is ~0.693, so dividing by ln(2) ≈ 0.693
+            # maps max uncertainty to ≈1.0.
+            ent_norm = min(ent / 0.693, 1.0)
+            if entropy_direction == "prefer_high":
+                adjustment = ent_norm * entropy_weight
+            else:
+                adjustment = (1.0 - ent_norm) * entropy_weight
+            r.relevance_score = r.relevance_score * (1 - entropy_weight) + adjustment
+
+        results.sort(key=lambda r: r.relevance_score, reverse=True)
+        return results
 
     def _recency_score(self, occurred_at: datetime, as_of: datetime) -> float:
         """Compute recency score (1.0 = now, 0.0 = 1 week ago)."""
@@ -1288,3 +1464,106 @@ class SiliconDBBackend:
             except Exception:
                 pass
         return {"snapshot_id": snapshot_id, "beliefs": snapshot_data}
+
+    # ========== Context Switch Snapshots ==========
+
+    NODE_TYPE_SNAPSHOT = "snapshot"
+
+    async def store_snapshot(self, snapshot: "ContextSnapshot") -> None:
+        """Store a context snapshot as a SiliconDB document.
+
+        The snapshot is stored with ``node_type="snapshot"`` so it can be
+        retrieved via metadata-filtered search.
+        """
+        import json as _json
+        from silicon_memory.snapshot.types import ContextSnapshot
+
+        external_id = self._build_external_id("snapshot", snapshot.id)
+
+        metadata = {
+            **self._create_privacy_metadata(),
+            "node_type": self.NODE_TYPE_SNAPSHOT,
+            "task_context": snapshot.task_context,
+            "created_at": snapshot.created_at.isoformat(),
+            "session_id": snapshot.session_id,
+            "snapshot_data": _json.dumps(snapshot.to_dict()),
+        }
+
+        text = (
+            f"Context snapshot for {snapshot.task_context}. "
+            f"{snapshot.summary}"
+        )
+
+        self._db.ingest(
+            external_id=external_id,
+            text=text,
+            metadata=metadata,
+            node_type=self.NODE_TYPE_SNAPSHOT,
+        )
+
+    async def query_snapshots_by_context(
+        self,
+        task_context: str | None = None,
+        limit: int = 10,
+    ) -> list["ContextSnapshot"]:
+        """Retrieve context snapshots, optionally filtered by task context.
+
+        Returns snapshots sorted by ``created_at`` descending (most recent first).
+        """
+        import json as _json
+        from silicon_memory.snapshot.types import ContextSnapshot
+        from datetime import datetime, timezone
+        from uuid import UUID as _UUID
+
+        user_prefix = self._get_user_prefix()
+
+        filt: dict[str, Any] | None = {"node_type": self.NODE_TYPE_SNAPSHOT}
+        if task_context:
+            filt["task_context"] = task_context
+
+        results = self._db.search(
+            query=task_context or "",
+            k=limit * 3,
+            filter=filt,
+        )
+
+        snapshots: list[ContextSnapshot] = []
+        for r in results:
+            ext_id = self._rget(r, "external_id", "")
+            if not ext_id.startswith(user_prefix):
+                continue
+
+            meta = self._rget(r, "metadata") or {}
+            raw = meta.get("snapshot_data")
+            if not raw:
+                continue
+
+            try:
+                data = _json.loads(raw) if isinstance(raw, str) else raw
+                # Explicit task_context filter (SiliconDB metadata filters
+                # may not work perfectly with compound conditions)
+                if task_context and data.get("task_context") != task_context:
+                    continue
+                exp_ids = [
+                    _UUID(eid) for eid in data.get("recent_experiences", [])
+                ]
+                snap = ContextSnapshot(
+                    id=_UUID(data["id"]),
+                    task_context=data.get("task_context", ""),
+                    summary=data.get("summary", ""),
+                    working_memory=data.get("working_memory", {}),
+                    recent_experiences=exp_ids,
+                    next_steps=data.get("next_steps", []),
+                    open_questions=data.get("open_questions", []),
+                    created_at=datetime.fromisoformat(data["created_at"]),
+                    session_id=data.get("session_id"),
+                    user_id=meta.get("owner_id"),
+                    tenant_id=meta.get("tenant_id"),
+                )
+                snapshots.append(snap)
+            except (KeyError, ValueError):
+                continue
+
+        # Sort by created_at descending
+        snapshots.sort(key=lambda s: s.created_at, reverse=True)
+        return snapshots[:limit]

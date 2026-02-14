@@ -37,12 +37,21 @@ llm = [
     "openai>=1.0",
     "anthropic>=0.18",
 ]
+server = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "mcp>=1.26",
+    "silicon-memory[llm]",
+]
 dspy = [
     "dspy>=3.0",
 ]
 all = [
-    "silicon-memory[dev,llm,dspy]",
+    "silicon-memory[dev,llm,server,dspy]",
 ]
+
+[project.scripts]
+silicon-memory-server = "silicon_memory.server.__main__:main"
 
 [project.urls]
 Repository = "https://github.com/birgerlie/silicon-memory"

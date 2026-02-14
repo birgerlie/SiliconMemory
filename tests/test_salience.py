@@ -67,6 +67,8 @@ class TestSalienceProfile:
             temporal_half_life_days=30,
             confidence_weight=0.2,
             graph_proximity_weight=0.15,
+            entropy_weight=0.1,
+            entropy_direction="prefer_low",
         )
         weights = profile.to_search_weights()
         assert weights["vector"] == 0.3
@@ -75,6 +77,8 @@ class TestSalienceProfile:
         assert weights["temporal_half_life_hours"] == 30 * 24
         assert weights["confidence"] == 0.2
         assert weights["graph_proximity"] == 0.15
+        assert weights["entropy_weight"] == 0.1
+        assert weights["entropy_direction"] == "prefer_low"
 
 
 # ============================================================================
@@ -187,11 +191,16 @@ class TestRecallWithSalience:
             "query": "test",
             "as_of": "2025-01-01T00:00:00",
         })
+        mock_backend.get_working = AsyncMock(return_value=None)
+        mock_backend.query_beliefs = AsyncMock(return_value=[])
 
         memory = MagicMock(spec=SiliconMemory)
         memory._backend = mock_backend
         memory._user_context = MagicMock(user_id="u1", tenant_id="t1")
         memory.recall = types.MethodType(SiliconMemory.recall, memory)
+        memory._resolve_context_seeds = types.MethodType(
+            SiliconMemory._resolve_context_seeds, memory,
+        )
         return memory
 
     async def test_recall_without_profile_unchanged(self):
@@ -251,3 +260,226 @@ class TestRecallWithSalience:
             weights = call_kwargs["search_weights"]
             expected = PROFILES[profile_name].to_search_weights()
             assert weights == expected, f"Profile {profile_name} mismatch"
+
+
+# ============================================================================
+# Integration tests: Backend search_weights wiring (SDB-1)
+# ============================================================================
+
+
+class TestBackendSearchWeightsWiring:
+    """Verify that backend query methods receive and use search_weights."""
+
+    async def test_recall_passes_search_weights_to_query_methods(self):
+        """Backend.recall() should forward search_weights to all query methods."""
+        from silicon_memory.storage.silicondb_backend import SiliconDBBackend
+
+        backend = MagicMock(spec=SiliconDBBackend)
+        backend._query_beliefs_with_entropy = AsyncMock(return_value=[])
+        backend.query_experiences = AsyncMock(return_value=[])
+        backend.find_applicable_procedures = AsyncMock(return_value=[])
+        backend.get_all_working = AsyncMock(return_value={})
+        backend._decay_config = MagicMock()
+        backend.recall = types.MethodType(SiliconDBBackend.recall, backend)
+
+        weights = {"vector": 0.4, "text": 0.2, "temporal": 0.1,
+                    "confidence": 0.2, "graph_proximity": 0.1,
+                    "temporal_half_life_hours": 720,
+                    "entropy_weight": 0.0, "entropy_direction": "prefer_low"}
+
+        await backend.recall("test query", search_weights=weights)
+
+        # _query_beliefs_with_entropy should receive search_weights
+        bkw = backend._query_beliefs_with_entropy.call_args[1]
+        assert bkw["search_weights"] == weights
+
+        # query_experiences should receive search_weights
+        ekw = backend.query_experiences.call_args[1]
+        assert ekw["search_weights"] == weights
+
+        # find_applicable_procedures should receive search_weights
+        pkw = backend.find_applicable_procedures.call_args[1]
+        assert pkw["search_weights"] == weights
+
+
+# ============================================================================
+# Integration tests: Entropy reranking (SDB-2)
+# ============================================================================
+
+
+class TestEntropyReranking:
+    """Test post-retrieval entropy reranking in recall()."""
+
+    def test_entropy_reranking_prefer_high(self):
+        """prefer_high should surface high-entropy (uncertain) results."""
+        from silicon_memory.core.types import RecallResult
+        from silicon_memory.storage.silicondb_backend import SiliconDBBackend
+
+        results = [
+            RecallResult(
+                content="certain fact", confidence=0.9, source=None,
+                memory_type="semantic", relevance_score=0.8, entropy=0.05,
+            ),
+            RecallResult(
+                content="uncertain fact", confidence=0.5, source=None,
+                memory_type="semantic", relevance_score=0.7, entropy=0.65,
+            ),
+        ]
+
+        reranked = SiliconDBBackend._apply_entropy_reranking(
+            results, entropy_weight=0.5, entropy_direction="prefer_high",
+        )
+
+        # The uncertain fact (high entropy) should now rank first
+        assert reranked[0].content == "uncertain fact"
+
+    def test_entropy_reranking_prefer_low(self):
+        """prefer_low should surface low-entropy (confident) results."""
+        from silicon_memory.core.types import RecallResult
+        from silicon_memory.storage.silicondb_backend import SiliconDBBackend
+
+        results = [
+            RecallResult(
+                content="uncertain fact", confidence=0.5, source=None,
+                memory_type="semantic", relevance_score=0.8, entropy=0.65,
+            ),
+            RecallResult(
+                content="certain fact", confidence=0.9, source=None,
+                memory_type="semantic", relevance_score=0.7, entropy=0.05,
+            ),
+        ]
+
+        reranked = SiliconDBBackend._apply_entropy_reranking(
+            results, entropy_weight=0.5, entropy_direction="prefer_low",
+        )
+
+        # The certain fact (low entropy) should now rank first
+        assert reranked[0].content == "certain fact"
+
+    def test_entropy_reranking_zero_weight_noop(self):
+        """Entropy weight of 0 should not change ordering."""
+        from silicon_memory.core.types import RecallResult
+        from silicon_memory.storage.silicondb_backend import SiliconDBBackend
+
+        results = [
+            RecallResult(
+                content="a", confidence=0.9, source=None,
+                memory_type="semantic", relevance_score=0.8, entropy=0.65,
+            ),
+            RecallResult(
+                content="b", confidence=0.5, source=None,
+                memory_type="semantic", relevance_score=0.3, entropy=0.05,
+            ),
+        ]
+        original_scores = [r.relevance_score for r in results]
+
+        reranked = SiliconDBBackend._apply_entropy_reranking(
+            results, entropy_weight=0.0, entropy_direction="prefer_low",
+        )
+
+        # Scores should be unchanged (0 weight → no adjustment)
+        for r, orig in zip(reranked, original_scores):
+            assert r.relevance_score == pytest.approx(orig)
+
+    def test_entropy_in_to_search_weights(self):
+        """SalienceProfile.to_search_weights() should include entropy config."""
+        profile = SalienceProfile(entropy_weight=0.15, entropy_direction="prefer_high")
+        weights = profile.to_search_weights()
+        assert weights["entropy_weight"] == 0.15
+        assert weights["entropy_direction"] == "prefer_high"
+
+
+# ============================================================================
+# Integration tests: Graph context nodes (SDB-3)
+# ============================================================================
+
+
+class TestGraphContextNodes:
+    """Test graph_context_nodes support in recall pipeline."""
+
+    def test_recall_context_has_graph_context_nodes(self):
+        """RecallContext should accept graph_context_nodes."""
+        ctx = RecallContext(
+            query="test",
+            graph_context_nodes=["node-a", "node-b"],
+        )
+        assert ctx.graph_context_nodes == ["node-a", "node-b"]
+
+    def test_recall_context_defaults_to_none(self):
+        """graph_context_nodes should default to None."""
+        ctx = RecallContext(query="test")
+        assert ctx.graph_context_nodes is None
+
+    async def test_graph_context_nodes_passed_to_backend(self):
+        """Explicit graph_context_nodes should flow into search_weights."""
+        from silicon_memory.memory.silicondb_router import SiliconMemory
+
+        mock_backend = AsyncMock()
+        mock_backend.recall = AsyncMock(return_value={
+            "facts": [], "experiences": [], "procedures": [],
+            "working_context": {}, "total_items": 0,
+            "query": "test", "as_of": "2025-01-01T00:00:00",
+        })
+        mock_backend.get_working = AsyncMock(return_value=None)
+        mock_backend.query_beliefs = AsyncMock(return_value=[])
+
+        memory = MagicMock(spec=SiliconMemory)
+        memory._backend = mock_backend
+        memory._user_context = MagicMock(user_id="u1", tenant_id="t1")
+        memory.recall = types.MethodType(SiliconMemory.recall, memory)
+        memory._resolve_context_seeds = types.MethodType(
+            SiliconMemory._resolve_context_seeds, memory,
+        )
+
+        # Use context_recall which has graph_proximity_weight=0.25
+        ctx = RecallContext(
+            query="test",
+            salience_profile="context_recall",
+            graph_context_nodes=["seed-1", "seed-2"],
+        )
+        await memory.recall(ctx)
+
+        call_kwargs = mock_backend.recall.call_args[1]
+        sw = call_kwargs["search_weights"]
+        assert sw["graph_context_nodes"] == ["seed-1", "seed-2"]
+
+    async def test_auto_resolve_seeds_when_none_provided(self):
+        """When graph_proximity > 0 and no seeds given, auto-resolve from working memory."""
+        from silicon_memory.memory.silicondb_router import SiliconMemory
+        from silicon_memory.core.types import Belief, BeliefStatus
+        from uuid import uuid4
+
+        mock_belief = MagicMock(spec=Belief)
+        mock_belief.id = uuid4()
+
+        mock_backend = AsyncMock()
+        mock_backend.recall = AsyncMock(return_value={
+            "facts": [], "experiences": [], "procedures": [],
+            "working_context": {}, "total_items": 0,
+            "query": "test", "as_of": "2025-01-01T00:00:00",
+        })
+        mock_backend.get_working = AsyncMock(return_value="machine learning")
+        mock_backend.query_beliefs = AsyncMock(return_value=[mock_belief])
+        mock_backend._build_external_id = MagicMock(
+            return_value=f"t1/u1/belief-{mock_belief.id}",
+        )
+
+        memory = MagicMock(spec=SiliconMemory)
+        memory._backend = mock_backend
+        memory._user_context = MagicMock(user_id="u1", tenant_id="t1")
+        memory.recall = types.MethodType(SiliconMemory.recall, memory)
+        memory._resolve_context_seeds = types.MethodType(
+            SiliconMemory._resolve_context_seeds, memory,
+        )
+
+        ctx = RecallContext(
+            query="test",
+            salience_profile="context_recall",  # graph_proximity=0.25
+        )
+        await memory.recall(ctx)
+
+        call_kwargs = mock_backend.recall.call_args[1]
+        sw = call_kwargs["search_weights"]
+        assert "graph_context_nodes" in sw
+        assert len(sw["graph_context_nodes"]) == 1
+        assert f"belief-{mock_belief.id}" in sw["graph_context_nodes"][0]

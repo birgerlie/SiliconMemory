@@ -293,9 +293,11 @@ Key files:
 
 ---
 
-### SDB-5: Edge Embeddings
+### SDB-5: Edge Embeddings — FERDIG
 
-#### Context (Why)
+> **Status: COMPLETE.** Implementert med separat edge-HNSW-indeks (syntetisk tenant 0xED6E), EdgeMetadataStore med ReadWriteLock, WAL-persistering (opcode 15), og Python-bindinger via GraphMixin (`add_edge_with_description`, `search_edges`). Bruker samme embedding-dimensjon og Metal distance-kerneler som dokument-HNSW — ingen separat konfigurasjon nødvendig.
+
+#### Context (Why) — Original
 
 Currently, graph edges are typed pointers with a weight (29 bytes). They carry no semantic content. This means you cannot search for relationships by meaning — only by type. In a corporate memory system, context scoping is critical: "uses Redis" in project Alpha is a different relationship than "evaluated Redis" in project Beta, but both have `type: .custom("uses")` pointing at the same Redis node.
 
@@ -928,7 +930,7 @@ Key files:
 | SDB-2 | Custom Scoring Configuration | SDB-1 | SiliconDB |
 | SDB-3 | Graph Proximity Scoring | SDB-2 | SiliconDB |
 | SDB-4 | Belief Snapshots | None | SiliconDB |
-| SDB-5 | Edge Embeddings | None | SiliconDB |
+| SDB-5 | Edge Embeddings | None | SiliconDB | **COMPLETE** — separat edge-HNSW, EdgeMetadataStore, WAL opcode 15, Python-bindinger |
 | SM-1 | Decision Records | SDB-4 | Silicon-Memory |
 | SM-2 | Decision Support Synthesis | SM-1 | Silicon-Memory |
 | SM-3 | Salience-Weighted Retrieval | SDB-1, SDB-2, SDB-3 | Silicon-Memory |
@@ -953,5 +955,5 @@ Key files:
 - SM-3 (salience retrieval, needs SDB-1 + SDB-2 + SDB-3)
 - SM-2 (decision synthesis, needs SM-1)
 
-**Phase 4 — Edge Intelligence**
-- SDB-5 (edge embeddings, independent but benefits from real usage data to validate need)
+**Phase 4 — Edge Intelligence (COMPLETE)**
+- SDB-5 (edge embeddings) — ✅ Implementert med separat HNSW, WAL, Python-bindinger. Bruker samme embedding-dimensjon som dokumenter.
