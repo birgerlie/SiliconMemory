@@ -21,7 +21,7 @@ from silicon_memory.reflection.types import (
     ReflectionConfig,
 )
 from silicon_memory.reflection.processor import ExperienceProcessor
-from silicon_memory.reflection.patterns import PatternExtractor
+from silicon_memory.reflection.llm_extractor import LLMPatternExtractor
 from silicon_memory.reflection.generator import BeliefGenerator
 from silicon_memory.reflection.engine import ReflectionEngine
 from silicon_memory.reflection.tool import ReflectionTool
@@ -35,7 +35,7 @@ __all__ = [
     "ReflectionConfig",
     # Components
     "ExperienceProcessor",
-    "PatternExtractor",
+    "LLMPatternExtractor",
     "BeliefGenerator",
     "ReflectionEngine",
     # Tool

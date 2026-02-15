@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
+from typing import Any
 
 from silicon_memory.core.utils import utc_now
 from silicon_memory.reflection.engine import ReflectionEngine
@@ -23,9 +24,10 @@ class ReflectionWorker:
     and reviews decision assumptions in the background.
     """
 
-    def __init__(self, pool: MemoryPool, config: ServerConfig) -> None:
+    def __init__(self, pool: MemoryPool, config: ServerConfig, llm: Any = None) -> None:
         self._pool = pool
         self._config = config
+        self._llm = llm
         self._task: asyncio.Task | None = None
         self._running = False
         self._cycle_count = 0
@@ -97,7 +99,7 @@ class ReflectionWorker:
 
         for memory in instances:
             try:
-                engine = ReflectionEngine(memory, reflection_config)
+                engine = ReflectionEngine(memory, llm=self._llm, config=reflection_config)
                 result = await engine.reflect(auto_commit=self._config.reflect_auto_commit)
 
                 total_experiences += result.experiences_processed

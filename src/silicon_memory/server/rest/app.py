@@ -96,7 +96,7 @@ def create_app(config: ServerConfig) -> FastAPI:
         if config.mode == "full":
             from silicon_memory.server.workers import ReflectionWorker
 
-            worker = ReflectionWorker(app.state.pool, config)
+            worker = ReflectionWorker(app.state.pool, config, llm=app.state.scheduler)
             app.state.worker = worker
             await worker.start()
             logger.info("Background reflection worker started (interval=%ds)", config.reflect_interval)

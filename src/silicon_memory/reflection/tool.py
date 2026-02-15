@@ -73,10 +73,11 @@ class ReflectionTool:
     def __init__(
         self,
         memory: "SiliconMemory",
+        llm: Any = None,
         config: ReflectionConfig | None = None,
     ) -> None:
         self._memory = memory
-        self._engine = ReflectionEngine(memory, config)
+        self._engine = ReflectionEngine(memory, llm=llm, config=config)
         self._pending_candidates: list[BeliefCandidate] = []
 
     async def invoke(

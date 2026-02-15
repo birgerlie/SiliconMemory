@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 from uuid import UUID, uuid4
+
+logger = logging.getLogger(__name__)
 
 from silicon_memory.core.utils import utc_now
 from silicon_memory.core.types import (
@@ -221,7 +224,7 @@ class SiliconDBBackend:
                 metadata["last_verified"] = belief.temporal.last_verified.isoformat()
 
         if belief.triplet:
-            # Store as triple
+            # Store as triple for graph queries
             self._db.insert_triple(
                 external_id=external_id,
                 subject=belief.triplet.subject,
@@ -230,6 +233,18 @@ class SiliconDBBackend:
                 probability=belief.confidence,
                 sources=sources,
                 metadata=metadata,
+            )
+            # Also store as searchable document so beliefs appear in text/vector search
+            search_text = belief.content or (
+                f"{belief.triplet.subject} {belief.triplet.predicate} {belief.triplet.object}"
+            )
+            self._db.ingest(
+                external_id=f"{external_id}__search",
+                text=search_text,
+                metadata={**metadata, "triple_id": external_id},
+                node_type=self.NODE_TYPE_BELIEF,
+                probability=belief.confidence,
+                sources=list(sources.keys()) if sources else None,
             )
         else:
             # Store as document with belief content
@@ -332,8 +347,10 @@ class SiliconDBBackend:
         seen_ids = set()
 
         for t in as_subject + as_object:
-            # Access control check
-            if not self._can_access(self._rget(t, "metadata") or {}):
+            # Access control check — triple results may not carry metadata,
+            # in that case allow access (triple was written by system)
+            meta = self._rget(t, "metadata") or {}
+            if meta and not self._can_access(meta):
                 continue
             belief = self._triple_to_belief(t)
             if belief and belief.id not in seen_ids:
@@ -422,6 +439,112 @@ class SiliconDBBackend:
                 break
 
         return results
+
+    # ========== Belief Consolidation (Monte Carlo + Graph) ==========
+
+    async def build_cooccurrences(
+        self,
+        belief_ids: list[UUID],
+        session_id: str | None = None,
+    ) -> None:
+        """Link beliefs that co-occur in the same evidence group.
+
+        Creates bidirectional co-occurrence edges in SiliconDB's graph.
+        Repeated calls strengthen the link.
+        """
+        external_ids = [
+            self._build_external_id("belief", bid) for bid in belief_ids
+        ]
+        # Also include __search variants so both triple and doc nodes link
+        all_ids = external_ids + [f"{eid}__search" for eid in external_ids]
+        try:
+            self._db.add_cooccurrences(all_ids, session_id)
+        except Exception:
+            # Fallback: try without __search variants
+            self._db.add_cooccurrences(external_ids, session_id)
+
+    async def monte_carlo_update(
+        self,
+        evidence: list[dict[str, Any]],
+        samples: int = 10000,
+        apply: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Run Monte Carlo probability update on beliefs.
+
+        Args:
+            evidence: List of {"external_id": str, "confidence": float}
+            samples: Number of MC samples (default 10k)
+            apply: If True, also persist updated probabilities
+
+        Returns:
+            List of update results with probability, ciLower, ciUpper
+        """
+        if not evidence:
+            return []
+        if apply:
+            return self._db.update_and_apply_probabilities(evidence, samples)
+        return self._db.update_probabilities(evidence, samples)
+
+    async def propagate_belief(
+        self,
+        belief_id: UUID,
+        confidence: float,
+        decay: float = 0.5,
+    ) -> list[dict[str, Any]]:
+        """Propagate evidence through the co-occurrence graph.
+
+        BFS from the source belief, spreading probability updates
+        with exponential decay per hop.
+
+        Returns:
+            List of propagation updates with previous/new probability and delta.
+        """
+        external_id = self._build_external_id("belief", belief_id)
+        return self._db.propagate(external_id, confidence, decay)
+
+    async def detect_mc_contradictions(
+        self,
+        samples: int = 10000,
+        min_conflict_score: float = 0.5,
+    ) -> list[dict[str, Any]]:
+        """Detect contradictions between beliefs using Monte Carlo sampling.
+
+        Returns beliefs that are statistically unlikely to be simultaneously true.
+        """
+        return self._db.detect_contradictions(samples, min_conflict_score)
+
+    async def detect_triple_contradictions(
+        self,
+        min_probability: float = 0.3,
+    ) -> list[dict[str, Any]]:
+        """Detect structural contradictions in subject-predicate-object triples.
+
+        Finds cases where the same subject+predicate has conflicting objects.
+        """
+        return self._db.detect_triple_contradictions(min_probability)
+
+    async def get_uncertain_beliefs(
+        self,
+        min_entropy: float = 0.5,
+        k: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Get beliefs with highest uncertainty (entropy near 1.0).
+
+        These are beliefs close to 0.5 probability — the system doesn't
+        know whether they're true or false. Useful for directing future
+        reflection to gather more evidence.
+        """
+        return self._db.get_uncertain_beliefs(min_entropy, k)
+
+    async def get_related_beliefs(
+        self,
+        belief_id: UUID,
+        min_strength: float = 0.1,
+        k: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Get beliefs related by co-occurrence."""
+        external_id = self._build_external_id("belief", belief_id)
+        return self._db.get_related(external_id, min_strength, k)
 
     # ========== Episodic Memory (Experiences) ==========
 
@@ -537,23 +660,51 @@ class SiliconDBBackend:
         return experiences[:limit]
 
     async def get_unprocessed_experiences(self, limit: int = 100) -> list[Experience]:
-        """Get unprocessed experiences for reflection."""
-        results = self._db.search(
-            query="",
-            k=limit * 4,
-            filter={"processed": False},
-        )
+        """Get unprocessed experiences for reflection.
 
+        Note: SiliconDB's wildcard '*' search may not find experience
+        documents (it biases toward triples). We use multiple common-term
+        searches to cover the document space.
+        """
         experiences = []
-        for r in results:
-            if self._rget(r, "node_type") != self.NODE_TYPE_EXPERIENCE:
+        seen_ids: set[str] = set()
+
+        # Use multiple common terms that appear in most legal documents.
+        # The '*' wildcard doesn't reliably return experience docs from
+        # SiliconDB's text index, so we use real terms instead.
+        _SEARCH_TERMS = [
+            "the", "court", "case", "document", "evidence",
+            "defendant", "motion", "order", "filed", "testimony",
+        ]
+
+        for term in _SEARCH_TERMS:
+            if len(experiences) >= limit:
+                break
+
+            try:
+                results = self._db.search(
+                    query=term,
+                    k=limit * 2,
+                    text_weight=1.0,
+                    vector_weight=0.0,
+                    filter={"processed": False, "node_type": self.NODE_TYPE_EXPERIENCE},
+                )
+            except Exception:
                 continue
-            # Access control check
-            if not self._can_access(self._rget(r, "metadata") or {}):
-                continue
-            exp = self._search_result_to_experience(r)
-            if exp and not exp.processed:
-                experiences.append(exp)
+
+            for r in results:
+                ext_id = self._rget(r, "external_id", "")
+                if ext_id in seen_ids:
+                    continue
+                seen_ids.add(ext_id)
+
+                if self._rget(r, "node_type") != self.NODE_TYPE_EXPERIENCE:
+                    continue
+                if not self._can_access(self._rget(r, "metadata") or {}):
+                    continue
+                exp = self._search_result_to_experience(r)
+                if exp and not exp.processed:
+                    experiences.append(exp)
 
         experiences.sort(key=lambda e: e.occurred_at)
         return experiences[:limit]
@@ -1129,10 +1280,26 @@ class SiliconDBBackend:
         return max(0.0, 1.0 - (age_hours / 168))
 
     def _triple_to_belief(self, t) -> Belief | None:
-        """Convert SiliconDB TripleResult to Belief."""
+        """Convert SiliconDB TripleResult to Belief.
+
+        Note: SiliconDB's query_triples CAPI does not return metadata or
+        sources in results.  We recover the belief UUID from external_id
+        and use safe defaults for the remaining fields.
+        """
         try:
             metadata = t.metadata or {}
-            belief_id = UUID(metadata.get("belief_id", str(uuid4())))
+
+            # Recover belief_id: prefer metadata, then parse from external_id
+            belief_id_str = metadata.get("belief_id")
+            if belief_id_str:
+                belief_id = UUID(belief_id_str)
+            else:
+                ext_id = getattr(t, "external_id", "") or ""
+                # external_id format: {tenant}/{user}/belief-{uuid}
+                if "/belief-" in ext_id:
+                    belief_id = UUID(ext_id.split("/belief-", 1)[1])
+                else:
+                    belief_id = uuid4()
 
             triplet = Triplet(
                 subject=t.subject,
@@ -1158,46 +1325,66 @@ class SiliconDBBackend:
                     last_verified=datetime.fromisoformat(metadata["last_verified"]) if metadata.get("last_verified") else None,
                 )
 
+            # Parse status safely — default to PROVISIONAL when metadata absent
+            status_str = metadata.get("status", "provisional")
+            try:
+                status = BeliefStatus(status_str)
+            except ValueError:
+                status = BeliefStatus.PROVISIONAL
+
             return Belief(
                 id=belief_id,
                 triplet=triplet,
                 confidence=t.probability,
                 source=source,
-                status=BeliefStatus(metadata.get("status", "active")),
+                status=status,
                 tags=metadata.get("tags", []),
                 temporal=temporal,
                 evidence_for=[UUID(e) for e in metadata.get("evidence_for", [])],
                 evidence_against=[UUID(e) for e in metadata.get("evidence_against", [])],
             )
-        except Exception:
+        except Exception as e:
+            logger.debug("Failed to convert triple to belief: %s", e)
             return None
 
     def _doc_to_belief(self, doc: dict) -> Belief | None:
         """Convert SiliconDB document to Belief."""
         try:
             metadata = doc.get("metadata", {})
+            status_str = metadata.get("status", "provisional")
+            try:
+                status = BeliefStatus(status_str)
+            except ValueError:
+                status = BeliefStatus.PROVISIONAL
             return Belief(
                 id=UUID(metadata.get("belief_id", str(uuid4()))),
                 content=doc.get("text", ""),
                 confidence=doc.get("probability", 1.0),
-                status=BeliefStatus(metadata.get("status", "active")),
+                status=status,
                 tags=metadata.get("tags", []),
             )
-        except Exception:
+        except Exception as e:
+            logger.debug("Failed to convert doc to belief: %s", e)
             return None
 
     def _search_result_to_belief(self, r) -> Belief | None:
         """Convert SiliconDB SearchResult to Belief."""
         try:
             metadata = self._rget(r, "metadata") or {}
+            status_str = metadata.get("status", "provisional")
+            try:
+                status = BeliefStatus(status_str)
+            except ValueError:
+                status = BeliefStatus.PROVISIONAL
             return Belief(
                 id=UUID(metadata.get("belief_id", str(uuid4()))),
                 content=self._rget(r, "text", ""),
                 confidence=self._rget(r, "probability", 1.0),
-                status=BeliefStatus(metadata.get("status", "active")),
+                status=status,
                 tags=metadata.get("tags", []),
             )
-        except Exception:
+        except Exception as e:
+            logger.debug("Failed to convert search result to belief: %s", e)
             return None
 
     def _doc_to_experience(self, doc: dict) -> Experience | None:

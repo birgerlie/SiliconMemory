@@ -86,6 +86,23 @@ class ExperienceProcessor:
         # Deduplicate groups that are too similar
         groups = self._deduplicate_groups(groups)
 
+        # Fallback: if no groups formed from the strategies above,
+        # create a single catch-all group so the LLM always processes
+        # the experiences rather than discarding them.
+        if not groups and experiences:
+            grouped_ids = set()
+            for g in groups:
+                grouped_ids.update(g.experiences)
+            ungrouped = [e for e in experiences if e.id not in grouped_ids]
+            if ungrouped:
+                times = [e.occurred_at for e in ungrouped]
+                groups.append(ExperienceGroup(
+                    experiences=[e.id for e in ungrouped],
+                    common_tags=self._find_common_tags(ungrouped),
+                    common_entities=self._extract_common_entities(ungrouped),
+                    time_span=(min(times), max(times)),
+                ))
+
         return groups
 
     def _group_by_session(

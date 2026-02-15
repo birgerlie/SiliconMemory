@@ -71,20 +71,25 @@ _RULES_PROMPT = """\
 Given these entity examples extracted from documents, generate regex rules \
 to detect similar entities in new text.
 
-For each entity type, generate:
-1. A broad detector regex (high recall — catches all similar patterns)
-2. A precise extractor regex with capture groups for normalization
-3. A safe normalize_template using {{match}}, {{group1}}, {{group2}}, \
+For each entity type, create a JSON object with EXACTLY these fields:
+- "detector_pattern": broad regex string (high recall, catches all similar patterns)
+- "detector_description": short human-readable description of what it detects
+- "extractor_pattern": precise regex string with capture groups for normalization
+- "entity_type": the entity type string (e.g. "case_id", "person", "law_ref")
+- "normalize_template": template using {{match}}, {{group1}}, {{group2}}, \
 {{entity_type}}, {{match_lower}}, {{match_upper}}
-4. 3-5 representative context examples (typical surrounding phrases)
+- "context_examples": array of 3-5 example phrases showing typical usage
 
 Entity examples:
 {examples}
 
-Respond with JSON: {{"rules": [...]}}
+Respond with ONLY valid JSON (no Python syntax, no r-strings, no code): \
+{{"rules": [{{...}}, ...]}}
 
-Rules must be valid Python regex patterns. Use non-capturing groups (?:...) \
-where appropriate. The extractor pattern should have at least one capture group."""
+IMPORTANT: All regex patterns must be valid JSON strings. Use double \
+backslashes for regex escapes (e.g. "\\\\d+" not r"\\d+", "\\\\s+" not r"\\s+"). \
+Use non-capturing groups (?:...) where appropriate. Each extractor_pattern \
+must have at least one capture group."""
 
 
 class RuleLearner:

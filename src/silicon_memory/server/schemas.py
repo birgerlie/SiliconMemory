@@ -208,12 +208,22 @@ class ReflectRequest(BaseModel):
     auto_commit: bool = True
 
 
+class ConsolidationResponse(BaseModel):
+    cooccurrence_links: int = 0
+    mc_updates: int = 0
+    propagations: int = 0
+    mc_contradictions: int = 0
+    triple_contradictions: int = 0
+    uncertain_beliefs: int = 0
+
+
 class ReflectResponse(BaseModel):
     experiences_processed: int
     patterns_found: int
     new_beliefs: int
     updated_beliefs: int
     contradictions: int
+    consolidation: ConsolidationResponse = ConsolidationResponse()
     summary: str
 
 

@@ -17,7 +17,7 @@ class LLMConfig:
     api_key: str = "not-needed"
     temperature: float = 0.7
     max_tokens: int = 1024
-    timeout: float = 120.0
-    max_concurrency: int = 2
+    timeout: float = 600.0
+    max_concurrency: int = 8
     max_queue_size: int = 100
     max_wait_seconds: float = 30.0

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from silicon_memory.core.types import Belief, BeliefStatus, Source, SourceType, Triplet
@@ -89,7 +89,19 @@ class BeliefGenerator:
     def _pattern_to_candidate(self, pattern: Pattern) -> BeliefCandidate | None:
         """Convert a pattern to a belief candidate."""
         # Generate content based on pattern type
-        if pattern.type == PatternType.CAUSAL:
+        if pattern.type == PatternType.FACT:
+            content = pattern.description
+            predicate = pattern.predicate or "is"
+        elif pattern.type == PatternType.RELATIONSHIP:
+            content = pattern.description
+            predicate = pattern.predicate or "related to"
+        elif pattern.type == PatternType.ARGUMENT:
+            content = pattern.description
+            predicate = pattern.predicate or "argues"
+        elif pattern.type == PatternType.TIMELINE_EVENT:
+            content = pattern.description
+            predicate = pattern.predicate or "event"
+        elif pattern.type == PatternType.CAUSAL:
             content = f"{pattern.subject} causes {pattern.object}"
             predicate = "causes"
         elif pattern.type == PatternType.TEMPORAL:
@@ -104,9 +116,6 @@ class BeliefGenerator:
         elif pattern.type == PatternType.PREFERENCE:
             content = f"Preference: {pattern.subject} over {pattern.object}"
             predicate = "is preferred over"
-        elif pattern.type == PatternType.FACT:
-            content = pattern.description
-            predicate = pattern.predicate or "is"
         else:
             content = pattern.description
             predicate = "relates to"
@@ -119,6 +128,15 @@ class BeliefGenerator:
         occurrence_boost = min(0.2, 0.02 * pattern.occurrences)
         confidence = min(0.95, base_confidence + evidence_boost + occurrence_boost)
 
+        # Collect source document provenance from pattern context
+        source_ctx: dict[str, Any] = {}
+        if pattern.context.get("source"):
+            source_ctx["source_document"] = pattern.context["source"]
+        if pattern.context.get("date"):
+            source_ctx["date"] = pattern.context["date"]
+        if pattern.context.get("rhetoric"):
+            source_ctx["rhetoric"] = pattern.context["rhetoric"]
+
         return BeliefCandidate(
             id=uuid4(),
             content=content,
@@ -128,6 +146,7 @@ class BeliefGenerator:
             confidence=confidence,
             source_patterns=[pattern.id],
             source_experiences=pattern.evidence,
+            source_context=source_ctx,
             reasoning=f"Extracted from {pattern.type.value} pattern with {len(pattern.evidence)} evidence items",
         )
 
@@ -278,20 +297,24 @@ class BeliefGenerator:
                 object=candidate.object,
             )
 
+        source_metadata: dict[str, Any] = {
+            "patterns": [str(p) for p in candidate.source_patterns],
+            "experiences": [str(e) for e in candidate.source_experiences],
+            "reasoning": candidate.reasoning,
+        }
+        if candidate.source_context:
+            source_metadata.update(candidate.source_context)
+
         belief = Belief(
             id=candidate.id,
-            content=candidate.content if not triplet else "",
+            content=candidate.content,
             triplet=triplet,
             confidence=candidate.confidence,
             source=Source(
                 id="reflection_engine",
                 type=SourceType.REFLECTION,
                 reliability=0.7,
-                metadata={
-                    "patterns": [str(p) for p in candidate.source_patterns],
-                    "experiences": [str(e) for e in candidate.source_experiences],
-                    "reasoning": candidate.reasoning,
-                },
+                metadata=source_metadata,
             ),
             status=BeliefStatus.PROVISIONAL,
             evidence_for=candidate.supports,

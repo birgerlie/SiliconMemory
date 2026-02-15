@@ -36,7 +36,7 @@ class DocumentConfig(IngestionConfig):
     """Configuration for document ingestion."""
 
     segment_by_headings: bool = True
-    extract_action_items: bool = True
+    extract_action_items: bool = False  # Disabled: only useful for meeting notes, not legal docs
     resolve_entities: bool = True
     min_heading_level: int = 1
     max_heading_level: int = 4
