@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from collections import deque
 from enum import Enum
 from typing import Any, TYPE_CHECKING
 
@@ -11,6 +12,8 @@ from silicon_memory.core.utils import utc_now
 from silicon_memory.security.types import UserContext
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
     from silicon_memory.storage.silicondb_backend import SiliconDBBackend
 
 
@@ -211,9 +214,13 @@ class TransparencyService:
         >>> log = await service.get_access_log(user_ctx, "belief-123")
     """
 
-    def __init__(self, backend: "SiliconDBBackend") -> None:
+    def __init__(
+        self,
+        backend: "SiliconDBBackend",
+        max_access_log_entries: int = 10_000,
+    ) -> None:
         self._backend = backend
-        self._access_log: list[AccessLogEntry] = []  # In-memory for now
+        self._access_log: deque[AccessLogEntry] = deque(maxlen=max_access_log_entries)
 
     async def why_do_you_know(
         self,
@@ -428,6 +435,28 @@ class TransparencyService:
 
         return related
 
+    @staticmethod
+    def _extract_uuid_from_external_id(external_id: str) -> "UUID":
+        """Extract UUID from external_id like 'tenant/user/belief-<uuid>'."""
+        from uuid import UUID
+        parts = external_id.rsplit("-", 1)
+        if len(parts) == 2:
+            # Handle format: prefix-uuid
+            suffix = parts[-1]
+            try:
+                return UUID(suffix)
+            except ValueError:
+                pass
+        # Try the whole last segment after /
+        last = external_id.rsplit("/", 1)[-1]
+        if "-" in last:
+            uuid_part = last.split("-", 1)[-1]
+            try:
+                return UUID(uuid_part)
+            except ValueError:
+                pass
+        return UUID("00000000-0000-0000-0000-000000000000")
+
     async def _build_provenance_chain(self, doc: Any) -> ProvenanceChain | None:
         """Build provenance chain from a search result document."""
         try:
@@ -499,12 +528,27 @@ class TransparencyService:
                     source_name=source_name,
                 ))
 
-            # Get related entities
+            # Get related entities — prefer native evidence edges
             related = []
-            evidence_for = metadata.get("evidence_for", [])
-            evidence_against = metadata.get("evidence_against", [])
-            related.extend(evidence_for[:5])
-            related.extend(evidence_against[:5])
+            if (
+                hasattr(self._backend, "_config")
+                and getattr(self._backend._config, "use_evidence_links", False)
+            ):
+                try:
+                    edges = await self._backend.get_evidence_for_belief(
+                        self._extract_uuid_from_external_id(external_id)
+                    )
+                    for edge in edges[:10]:
+                        edge_id = getattr(edge, "external_id", None)
+                        if edge_id:
+                            related.append(edge_id)
+                except Exception:
+                    pass
+            if not related:
+                evidence_for = metadata.get("evidence_for", [])
+                evidence_against = metadata.get("evidence_against", [])
+                related.extend(evidence_for[:5])
+                related.extend(evidence_against[:5])
 
             # Build chain
             created_at = None

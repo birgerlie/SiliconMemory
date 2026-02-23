@@ -13,6 +13,7 @@ from silicon_memory.ingestion.types import IngestionConfig, IngestionResult
 from silicon_memory.ingestion._helpers import (
     extract_action_items_from_text,
     parse_llm_json_array,
+    persist_experiences,
 )
 
 if TYPE_CHECKING:
@@ -121,6 +122,7 @@ class EmailAdapter:
         # Step 3: Create experiences for each message
         user_ctx = memory.user_context
         thread_id = metadata.get("thread_id") or messages[0].thread_id or str(uuid4())
+        pending_experiences: list[Experience] = []
 
         for i, msg in enumerate(messages):
             try:
@@ -142,10 +144,17 @@ class EmailAdapter:
                     user_id=user_ctx.user_id,
                     tenant_id=user_ctx.tenant_id,
                 )
-                await memory.record_experience(exp)
-                result.experiences_created += 1
+                pending_experiences.append(exp)
             except Exception as e:
                 result.errors.append(f"Failed to store message {i}: {e}")
+
+        await persist_experiences(
+            memory=memory,
+            experiences=pending_experiences,
+            result=result,
+            config=self._config,
+            item_label="message",
+        )
 
         # Step 4: Extract action items (optional)
         if self._config.extract_action_items:

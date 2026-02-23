@@ -45,6 +45,7 @@ class SecurityConfig:
     audit_write_operations: bool = True
     audit_delete_operations: bool = True
     audit_retention_days: int = 90
+    max_audit_entries: int = 10_000
 
     # Access control
     enable_abac: bool = True
@@ -59,6 +60,7 @@ class SecurityConfig:
     # Transparency
     enable_provenance_tracking: bool = True
     enable_access_logging: bool = True
+    max_access_log_entries: int = 10_000
 
     # Data export/import
     allow_data_export: bool = True
@@ -95,6 +97,10 @@ class SecurityConfig:
 
         if self.audit_retention_days < 1:
             issues.append("audit_retention_days must be at least 1")
+        if self.max_audit_entries < 1:
+            issues.append("max_audit_entries must be at least 1")
+        if self.max_access_log_entries < 1:
+            issues.append("max_access_log_entries must be at least 1")
 
         valid_privacy = {"private", "workspace", "public"}
         if self.default_privacy_level not in valid_privacy:
@@ -124,6 +130,7 @@ class SecurityConfig:
             "audit_write_operations": self.audit_write_operations,
             "audit_delete_operations": self.audit_delete_operations,
             "audit_retention_days": self.audit_retention_days,
+            "max_audit_entries": self.max_audit_entries,
             "enable_abac": self.enable_abac,
             "admin_bypass_enabled": self.admin_bypass_enabled,
             "allow_selective_forget": self.allow_selective_forget,
@@ -132,6 +139,7 @@ class SecurityConfig:
             "hard_delete_on_forget": self.hard_delete_on_forget,
             "enable_provenance_tracking": self.enable_provenance_tracking,
             "enable_access_logging": self.enable_access_logging,
+            "max_access_log_entries": self.max_access_log_entries,
             "allow_data_export": self.allow_data_export,
             "allow_data_import": self.allow_data_import,
             "require_export_consent": self.require_export_consent,
@@ -158,6 +166,7 @@ class SecurityConfig:
             audit_write_operations=data.get("audit_write_operations", True),
             audit_delete_operations=data.get("audit_delete_operations", True),
             audit_retention_days=data.get("audit_retention_days", 90),
+            max_audit_entries=data.get("max_audit_entries", 10_000),
             enable_abac=data.get("enable_abac", True),
             admin_bypass_enabled=data.get("admin_bypass_enabled", True),
             allow_selective_forget=data.get("allow_selective_forget", True),
@@ -166,6 +175,7 @@ class SecurityConfig:
             hard_delete_on_forget=data.get("hard_delete_on_forget", True),
             enable_provenance_tracking=data.get("enable_provenance_tracking", True),
             enable_access_logging=data.get("enable_access_logging", True),
+            max_access_log_entries=data.get("max_access_log_entries", 10_000),
             allow_data_export=data.get("allow_data_export", True),
             allow_data_import=data.get("allow_data_import", True),
             require_export_consent=data.get("require_export_consent", False),

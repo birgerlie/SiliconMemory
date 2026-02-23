@@ -1,0 +1,441 @@
+{
+  "gold_docs": 120,
+  "pred_docs": 29439,
+  "scored_docs": 120,
+  "by_type": {
+    "people": {
+      "tp": 322,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "organizations": {
+      "tp": 170,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "locations": {
+      "tp": 126,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    }
+  },
+  "micro": {
+    "tp": 618,
+    "fp": 0,
+    "fn": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  },
+  "worst_docs": [
+    {
+      "doc_id": "DOJ-OGR-00000330",
+      "by_type": {
+        "people": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0
+        },
+        "organizations": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0
+        },
+        "locations": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "doc_id": "DOJ-OGR-00000584",
+      "by_type": {
+        "people": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0
+        },
+        "organizations": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0
+        },
+        "locations": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "doc_id": "DOJ-OGR-00000648",
+      "by_type": {
+        "people": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0
+        },
+        "organizations": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0
+        },
+        "locations": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "doc_id": "DOJ-OGR-00000685",
+      "by_type": {
+        "people": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "organizations": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0
+        },
+        "locations": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "doc_id": "DOJ-OGR-00000800",
+      "by_type": {
+        "people": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "organizations": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0
+        },
+        "locations": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "doc_id": "DOJ-OGR-00001144",
+      "by_type": {
+        "people": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0
+        },
+        "organizations": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0
+        },
+        "locations": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "doc_id": "DOJ-OGR-00001233",
+      "by_type": {
+        "people": {
+          "tp": 5,
+          "fp": 0,
+          "fn": 0
+        },
+        "organizations": {
+          "tp": 5,
+          "fp": 0,
+          "fn": 0
+        },
+        "locations": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "doc_id": "DOJ-OGR-00001356",
+      "by_type": {
+        "people": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "organizations": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "locations": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "doc_id": "DOJ-OGR-00002466",
+      "by_type": {
+        "people": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0
+        },
+        "organizations": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0
+        },
+        "locations": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "doc_id": "DOJ-OGR-00002852",
+      "by_type": {
+        "people": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0
+        },
+        "organizations": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0
+        },
+        "locations": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "doc_id": "DOJ-OGR-00003043",
+      "by_type": {
+        "people": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0
+        },
+        "organizations": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0
+        },
+        "locations": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "doc_id": "DOJ-OGR-00003057",
+      "by_type": {
+        "people": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0
+        },
+        "organizations": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0
+        },
+        "locations": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "doc_id": "DOJ-OGR-00003065",
+      "by_type": {
+        "people": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0
+        },
+        "organizations": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0
+        },
+        "locations": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "doc_id": "DOJ-OGR-00003318",
+      "by_type": {
+        "people": {
+          "tp": 9,
+          "fp": 0,
+          "fn": 0
+        },
+        "organizations": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0
+        },
+        "locations": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "doc_id": "DOJ-OGR-00003831",
+      "by_type": {
+        "people": {
+          "tp": 6,
+          "fp": 0,
+          "fn": 0
+        },
+        "organizations": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0
+        },
+        "locations": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "doc_id": "DOJ-OGR-00003888",
+      "by_type": {
+        "people": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0
+        },
+        "organizations": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0
+        },
+        "locations": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "doc_id": "DOJ-OGR-00004664",
+      "by_type": {
+        "people": {
+          "tp": 5,
+          "fp": 0,
+          "fn": 0
+        },
+        "organizations": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0
+        },
+        "locations": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "doc_id": "DOJ-OGR-00005006",
+      "by_type": {
+        "people": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0
+        },
+        "organizations": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0
+        },
+        "locations": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "doc_id": "DOJ-OGR-00005355",
+      "by_type": {
+        "people": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0
+        },
+        "organizations": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0
+        },
+        "locations": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0
+        }
+      }
+    },
+    {
+      "doc_id": "DOJ-OGR-00005402",
+      "by_type": {
+        "people": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0
+        },
+        "organizations": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0
+        },
+        "locations": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0
+        }
+      }
+    }
+  ]
+}

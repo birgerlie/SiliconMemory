@@ -49,6 +49,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+_META_PREDICATES = {
+    "possibly_connected_via",
+    "has_conflicting_claim_on",
+    "timeline_progresses_from_to",
+    "hypothetically",
+}
+
+
 @dataclass
 class ConsolidationStats:
     """Statistics from a consolidation pass."""
@@ -80,9 +88,22 @@ class MemoryConsolidator:
         self,
         memory: "SiliconMemory",
         config: ReflectionConfig | None = None,
+        max_nodes: int = 500,
     ) -> None:
         self._memory = memory
         self._config = config or ReflectionConfig()
+        self._max_nodes = max_nodes or self._config.max_consolidation_nodes
+
+    @staticmethod
+    def _is_meta_predicate(predicate: str) -> bool:
+        norm = " ".join(predicate.strip().lower().split())
+        if not norm:
+            return True
+        if norm.startswith("systematically "):
+            return True
+        if norm in _META_PREDICATES:
+            return True
+        return False
 
     async def consolidate(self) -> ConsolidationStats:
         """Run full memory consolidation.
@@ -123,10 +144,22 @@ class MemoryConsolidator:
         return stats
 
     async def _compute_importance(self) -> dict[str, float]:
-        """Compute entity importance via PageRank."""
+        """Compute entity importance via PageRank, truncated to top-N."""
         db = self._memory._backend._db
         try:
-            scores = db.pagerank(damping_factor=0.85)
+            pr_results = db.pagerank(k=self._max_nodes if self._max_nodes else 10000)
+            if isinstance(pr_results, list):
+                scores = {
+                    n.get("external_id", n.get("id", "")): n.get("score", 0.0)
+                    for n in pr_results
+                }
+            elif isinstance(pr_results, dict) and "nodes" in pr_results:
+                scores = {
+                    n.get("external_id", n.get("id", "")): n.get("score", 0.0)
+                    for n in pr_results["nodes"]
+                }
+            else:
+                scores = pr_results if isinstance(pr_results, dict) else {}
             return scores
         except Exception as e:
             logger.warning("PageRank failed: %s", e)
@@ -232,7 +265,7 @@ class MemoryConsolidator:
         # Query triples directly to get beliefs WITH triplet data.
         # (query_beliefs returns search docs first which lack triplets)
         try:
-            triples = backend._db.query_triples(min_probability=0.4, k=1000)
+            triples = backend._db.query_triples(min_probability=0.4, k=self._max_nodes if self._max_nodes else 100_000)
             beliefs = []
             for t in triples:
                 b = backend._triple_to_belief(t)
@@ -241,9 +274,22 @@ class MemoryConsolidator:
         except Exception:
             return 0
 
+        # Generalize only from base extracted beliefs to avoid recursive
+        # compounding over synthetic hypotheses/generalizations.
+        base_beliefs: list[Belief] = []
+        for b in beliefs:
+            if not b.triplet:
+                continue
+            tags = {str(t).lower() for t in (b.tags or set())}
+            if "hypothesis" in tags or "generalization" in tags:
+                continue
+            if self._is_meta_predicate(b.triplet.predicate):
+                continue
+            base_beliefs.append(b)
+
         # Group by (subject, predicate) to find repeated patterns
         pattern_groups: dict[str, list[Belief]] = defaultdict(list)
-        for b in beliefs:
+        for b in base_beliefs:
             if not b.triplet:
                 continue
             key = f"{b.triplet.subject.lower()}|{b.triplet.predicate.lower()}"
@@ -254,6 +300,8 @@ class MemoryConsolidator:
                 continue
 
             subject, predicate = key.split("|", 1)
+            if self._is_meta_predicate(predicate):
+                continue
             objects = [b.triplet.object for b in group if b.triplet]
             avg_confidence = sum(b.confidence for b in group) / len(group)
 
@@ -296,7 +344,7 @@ class MemoryConsolidator:
 
         # Also look for object-side patterns: multiple subjects + same predicate + same object
         object_groups: dict[str, list[Belief]] = defaultdict(list)
-        for b in beliefs:
+        for b in base_beliefs:
             if not b.triplet:
                 continue
             key = f"{b.triplet.predicate.lower()}|{b.triplet.object.lower()}"
@@ -307,6 +355,8 @@ class MemoryConsolidator:
                 continue
 
             predicate, obj = key.split("|", 1)
+            if self._is_meta_predicate(predicate):
+                continue
             subjects = [b.triplet.subject for b in group if b.triplet]
             avg_confidence = sum(b.confidence for b in group) / len(group)
 
@@ -371,6 +421,12 @@ class MemoryConsolidator:
         comm_map: dict[int, list[str]] = defaultdict(list)
         for ext_id, comm_id in communities.items():
             comm_map[comm_id].append(ext_id)
+
+        # Cap to 50 communities to bound processing
+        if len(comm_map) > 50:
+            # Keep the 50 largest communities
+            sorted_comms = sorted(comm_map.items(), key=lambda x: len(x[1]), reverse=True)
+            comm_map = dict(sorted_comms[:50])
 
         result["clusters"] = len(comm_map)
 

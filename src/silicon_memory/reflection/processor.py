@@ -47,7 +47,7 @@ class ExperienceProcessor:
         limit: int | None = None,
     ) -> list[Experience]:
         """Fetch unprocessed experiences from memory."""
-        max_exp = limit or self._config.max_experiences_per_batch
+        max_exp = limit or self._config.max_experiences_per_batch or 10000
         return await self._memory._backend.get_unprocessed_experiences(max_exp)
 
     async def process_batch(

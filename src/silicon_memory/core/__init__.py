@@ -11,6 +11,18 @@ from silicon_memory.core.types import (
     TemporalContext,
     Triplet,
 )
+from silicon_memory.core.claims import (
+    AntiTrivialityPolicy,
+    AntiTrivialityResult,
+    ClaimDecision,
+    ClaimDecisionLabel,
+    ClaimMergeCandidate,
+    ClaimPrecisionJudge,
+    ProvenanceContract,
+    ProvenanceValidation,
+    build_provenance_contract,
+    validate_provenance_contract,
+)
 from silicon_memory.core.protocols import (
     EpisodicMemory,
     LLMProvider,
@@ -49,4 +61,15 @@ __all__ = [
     "BeliefConflictError",
     "StorageError",
     "ValidationError",
+    # Claim strategy
+    "AntiTrivialityPolicy",
+    "AntiTrivialityResult",
+    "ClaimDecision",
+    "ClaimDecisionLabel",
+    "ClaimMergeCandidate",
+    "ClaimPrecisionJudge",
+    "ProvenanceContract",
+    "ProvenanceValidation",
+    "build_provenance_contract",
+    "validate_provenance_contract",
 ]

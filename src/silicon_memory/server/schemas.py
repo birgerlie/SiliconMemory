@@ -173,6 +173,8 @@ class IngestRequest(BaseModel):
     source_type: str = Field(description="meeting | chat | email | document | news")
     content: str
     metadata: dict[str, Any] = Field(default_factory=dict)
+    wait_for_visibility: bool = True
+    visibility_timeout_s: float = 5.0
 
 
 class IngestResponse(BaseModel):
@@ -182,6 +184,8 @@ class IngestResponse(BaseModel):
     action_items_detected: int
     errors: list[str]
     source_type: str
+    visibility_waited: bool = False
+    visibility_ready: bool = True
 
 
 # ========== Forget ==========
@@ -243,3 +247,4 @@ class StatusResponse(BaseModel):
     last_reflection: str | None = None
     reflection_count: int = 0
     mode: str
+    event_stream: dict[str, Any] | None = None

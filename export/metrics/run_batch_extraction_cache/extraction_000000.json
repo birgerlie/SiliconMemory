@@ -1,0 +1,483 @@
+{
+  "extraction": {
+    "facts": [
+      {
+        "subject": "Ghislaine Maxwell",
+        "predicate": "convicted of",
+        "object": "conspiracy to transport minors with intent to engage in criminal sexual activity (18 U.S.C. \u00a7 371)",
+        "source": "DOJ-OGR-00000003",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Ghislaine Maxwell",
+        "predicate": "convicted of",
+        "object": "transportation of a minor with intent to engage in criminal sexual activity (18 U.S.C. \u00a7 2423(a))",
+        "source": "DOJ-OGR-00000003",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Ghislaine Maxwell",
+        "predicate": "convicted of",
+        "object": "sex trafficking of a minor (18 U.S.C. \u00a7 1591(a) and (b)(2))",
+        "source": "DOJ-OGR-00000003",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Ghislaine Maxwell",
+        "predicate": "sentenced to",
+        "object": "concurrent terms of 60, 120, and 240 months imprisonment",
+        "source": "DOJ-OGR-00000003",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Ghislaine Maxwell",
+        "predicate": "sentenced to",
+        "object": "concurrent supervised release terms of 3, 3, and 5 years",
+        "source": "DOJ-OGR-00000005",
+        "confidence": 1.0
+      },
+      {
+        "subject": "District Court",
+        "predicate": "imposed fine of",
+        "object": "$250,000 on each count, totaling $750,000",
+        "source": "DOJ-OGR-00000005",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Alison J. Nathan",
+        "predicate": "presided over",
+        "object": "United States v. Maxwell in SDNY",
+        "source": "DOJ-OGR-00000003",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Second Circuit Court of Appeals",
+        "predicate": "affirmed",
+        "object": "District Court's June 29, 2022 judgment of conviction",
+        "source": "DOJ-OGR-00000005",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Jeffrey Epstein",
+        "predicate": "entered NPA with",
+        "object": "USAO-SDFL in September 2007",
+        "source": "DOJ-OGR-00000006",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Jeffrey Epstein",
+        "predicate": "agreed to plead guilty to",
+        "object": "one count of solicitation of prostitution under Florida law",
+        "source": "DOJ-OGR-00000006",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Epstein's NPA",
+        "predicate": "does not bind",
+        "object": "USAO-SDNY",
+        "source": "DOJ-OGR-00000005",
+        "confidence": 1.0
+      },
+      {
+        "subject": "18 U.S.C. \u00a7 3283",
+        "predicate": "extended statute of limitations for",
+        "object": "sexual abuse charges for offenses committed before enactment date",
+        "source": "DOJ-OGR-00000005",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Maxwell's second superseding indictment",
+        "predicate": "filed on",
+        "object": "March 29, 2021",
+        "source": "DOJ-OGR-00000003",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Maxwell's second superseding indictment",
+        "predicate": "complied with",
+        "object": "statute of limitations",
+        "source": "DOJ-OGR-00000005",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Ghislaine Maxwell",
+        "predicate": "groomed",
+        "object": "numerous young women for Jeffrey Epstein starting in 1994",
+        "source": "DOJ-OGR-00000006",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Ghislaine Maxwell",
+        "predicate": "provided Epstein access to",
+        "object": "underage girls in various US locations until about 2004",
+        "source": "DOJ-OGR-00000006",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Andrew Rohrbach",
+        "predicate": "role",
+        "object": "Assistant United States Attorney for Appellee",
+        "source": "DOJ-OGR-00000004",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Damian Williams",
+        "predicate": "role",
+        "object": "United States Attorney for the Southern District of New York",
+        "source": "DOJ-OGR-00000004",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Diana Fabi Samson",
+        "predicate": "represented",
+        "object": "Defendant-Appellant Ghislaine Maxwell",
+        "source": "DOJ-OGR-00000004",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Aidala Bertuna & Kamins PC",
+        "predicate": "located in",
+        "object": "New York, NY",
+        "source": "DOJ-OGR-00000004",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Jos\u00e9 A. Cabranes",
+        "predicate": "authored opinion in",
+        "object": "United States v. Maxwell, Case 22-1426",
+        "source": "DOJ-OGR-00000004",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Case 22-1426",
+        "predicate": "argued on",
+        "object": "March 12, 2024",
+        "source": "DOJ-OGR-00000002",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Case 22-1426",
+        "predicate": "decided on",
+        "object": "September 17, 2024",
+        "source": "DOJ-OGR-00000002",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Panel",
+        "predicate": "composed of",
+        "object": "Cabranes, Wesley, and Lohier, Circuit Judges",
+        "source": "DOJ-OGR-00000002",
+        "confidence": 1.0
+      },
+      {
+        "subject": "District Court",
+        "predicate": "denied",
+        "object": "Maxwell's Rule 33 motion for new trial",
+        "source": "DOJ-OGR-00000005",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Maxwell's Rule 33 motion",
+        "predicate": "based on",
+        "object": "claimed Sixth Amendment violation of right to fair and impartial jury",
+        "source": "DOJ-OGR-00000005",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Juror",
+        "predicate": "gave erroneous answers during",
+        "object": "voir dire",
+        "source": "DOJ-OGR-00000005",
+        "confidence": 0.9
+      },
+      {
+        "subject": "District Court response to jury note",
+        "predicate": "did not result in",
+        "object": "constructive amendment or prejudicial variance from indictment",
+        "source": "DOJ-OGR-00000005",
+        "confidence": 1.0
+      },
+      {
+        "subject": "United States v. Litwok",
+        "predicate": "citation",
+        "object": "678 F.3d 208, 210-11 (2d Cir. 2012)",
+        "source": "DOJ-OGR-00000006",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Maurene Comey",
+        "predicate": "role",
+        "object": "Assistant United States Attorney on brief for Appellee",
+        "source": "DOJ-OGR-00000004",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Alison Moe",
+        "predicate": "role",
+        "object": "Assistant United States Attorney on brief for Appellee",
+        "source": "DOJ-OGR-00000004",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Lara Pomerantz",
+        "predicate": "role",
+        "object": "Assistant United States Attorney on brief for Appellee",
+        "source": "DOJ-OGR-00000004",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Won S. Shin",
+        "predicate": "role",
+        "object": "Assistant United States Attorney on brief for Appellee",
+        "source": "DOJ-OGR-00000004",
+        "confidence": 1.0
+      },
+      {
+        "subject": "Arthur L. Aidala",
+        "predicate": "on brief for",
+        "object": "Defendant-Appellant Maxwell",
+        "source": "DOJ-OGR-00000004",
+        "confidence": 1.0
+      },
+      {
+        "subject": "John M. Leventhal",
+        "predicate": "on brief for",
+        "object": "Defendant-Appellant Maxwell",
+        "source": "DOJ-OGR-00000004",
+        "confidence": 1.0
+      }
+    ],
+    "relationships": [
+      {
+        "person1": "Ghislaine Maxwell",
+        "relationship": "facilitated abuse by",
+        "person2": "Jeffrey Epstein",
+        "context": "Maxwell groomed victims and provided Epstein access to underage girls from 1994 to 2004",
+        "source": "DOJ-OGR-00000006",
+        "confidence": 1.0
+      },
+      {
+        "person1": "Jeffrey Epstein",
+        "relationship": "entered NPA with",
+        "person2": "USAO-SDFL",
+        "context": "September 2007 following state and federal investigations into unlawful sexual activity",
+        "source": "DOJ-OGR-00000006",
+        "confidence": 1.0
+      },
+      {
+        "person1": "Diana Fabi Samson",
+        "relationship": "defense counsel for",
+        "person2": "Ghislaine Maxwell",
+        "context": "Appeal in Case 22-1426",
+        "source": "DOJ-OGR-00000004",
+        "confidence": 1.0
+      },
+      {
+        "person1": "Andrew Rohrbach",
+        "relationship": "prosecutor for",
+        "person2": "United States of America",
+        "context": "Appellee in Case 22-1426",
+        "source": "DOJ-OGR-00000004",
+        "confidence": 1.0
+      },
+      {
+        "person1": "Damian Williams",
+        "relationship": "supervising attorney for",
+        "person2": "Andrew Rohrbach",
+        "context": "Williams is US Attorney for SDNY; Rohrbach is AUSA on the case",
+        "source": "DOJ-OGR-00000004",
+        "confidence": 0.9
+      },
+      {
+        "person1": "Jos\u00e9 A. Cabranes",
+        "relationship": "panel judge with",
+        "person2": "Wesley",
+        "context": "Second Circuit panel in Case 22-1426",
+        "source": "DOJ-OGR-00000002",
+        "confidence": 1.0
+      },
+      {
+        "person1": "Jos\u00e9 A. Cabranes",
+        "relationship": "panel judge with",
+        "person2": "Lohier",
+        "context": "Second Circuit panel in Case 22-1426",
+        "source": "DOJ-OGR-00000002",
+        "confidence": 1.0
+      },
+      {
+        "person1": "Alison J. Nathan",
+        "relationship": "presiding judge over",
+        "person2": "Ghislaine Maxwell",
+        "context": "District Court conviction and sentencing in SDNY",
+        "source": "DOJ-OGR-00000003",
+        "confidence": 1.0
+      }
+    ],
+    "arguments": [
+      {
+        "claim": "Epstein's NPA with USAO-SDFL did not bar Maxwell's prosecution by USAO-SDNY",
+        "evidence": "The NPA does not bind USAO-SDNY; it was an agreement with a different prosecutorial office",
+        "rhetoric": "logos",
+        "actor": "Second Circuit Court of Appeals",
+        "source": "DOJ-OGR-00000005",
+        "confidence": 1.0
+      },
+      {
+        "claim": "Maxwell's indictment complied with the statute of limitations",
+        "evidence": "18 U.S.C. \u00a7 3283 extended the time to bring charges of sexual abuse for offenses committed before the statute's enactment",
+        "rhetoric": "logos",
+        "actor": "Second Circuit Court of Appeals",
+        "source": "DOJ-OGR-00000005",
+        "confidence": 1.0
+      },
+      {
+        "claim": "District Court did not abuse its discretion in denying Maxwell's Rule 33 motion for new trial",
+        "evidence": "The motion was based on one juror's erroneous answers during voir dire, which the court found insufficient to warrant a new trial",
+        "rhetoric": "logos",
+        "actor": "Second Circuit Court of Appeals",
+        "source": "DOJ-OGR-00000005",
+        "confidence": 1.0
+      },
+      {
+        "claim": "District Court's response to jury note did not result in constructive amendment or prejudicial variance",
+        "evidence": "The court's response remained within the allegations of the indictment",
+        "rhetoric": "logos",
+        "actor": "Second Circuit Court of Appeals",
+        "source": "DOJ-OGR-00000005",
+        "confidence": 1.0
+      },
+      {
+        "claim": "Maxwell's sentence is procedurally reasonable",
+        "evidence": "The Second Circuit identified no procedural errors in the District Court's sentencing",
+        "rhetoric": "logos",
+        "actor": "Second Circuit Court of Appeals",
+        "source": "DOJ-OGR-00000006",
+        "confidence": 1.0
+      },
+      {
+        "claim": "Facts should be viewed in the light most favorable to the Government on appeal from conviction",
+        "evidence": "Citing United States v. Litwok, 678 F.3d 208, 210-11 (2d Cir. 2012)",
+        "rhetoric": "ethos",
+        "actor": "Jos\u00e9 A. Cabranes",
+        "source": "DOJ-OGR-00000006",
+        "confidence": 1.0
+      }
+    ],
+    "events": [
+      {
+        "date": "1994",
+        "event": "Ghislaine Maxwell began grooming young women for Jeffrey Epstein's sexual abuse",
+        "actors": [
+          "Ghislaine Maxwell",
+          "Jeffrey Epstein"
+        ],
+        "significance": "Start of documented pattern of sexual abuse and grooming",
+        "source": "DOJ-OGR-00000006",
+        "confidence": 1.0
+      },
+      {
+        "date": "2004",
+        "event": "Pattern of Maxwell providing Epstein access to underage girls ended",
+        "actors": [
+          "Ghislaine Maxwell",
+          "Jeffrey Epstein"
+        ],
+        "significance": "Marks approximate end of the abuse period described in the indictment",
+        "source": "DOJ-OGR-00000006",
+        "confidence": 0.9
+      },
+      {
+        "date": "September 2007",
+        "event": "Jeffrey Epstein entered Non-Prosecution Agreement with USAO-SDFL",
+        "actors": [
+          "Jeffrey Epstein",
+          "USAO-SDFL"
+        ],
+        "significance": "NPA became central issue in Maxwell's appeal regarding whether it barred her prosecution",
+        "source": "DOJ-OGR-00000006",
+        "confidence": 1.0
+      },
+      {
+        "date": "March 29, 2021",
+        "event": "Second superseding indictment filed against Ghislaine Maxwell",
+        "actors": [
+          "USAO-SDNY",
+          "Ghislaine Maxwell"
+        ],
+        "significance": "Indictment that was subject to statute of limitations challenge on appeal",
+        "source": "DOJ-OGR-00000003",
+        "confidence": 1.0
+      },
+      {
+        "date": "June 29, 2022",
+        "event": "Ghislaine Maxwell convicted and sentenced in SDNY",
+        "actors": [
+          "Ghislaine Maxwell",
+          "Alison J. Nathan"
+        ],
+        "significance": "Judgment of conviction that was appealed to the Second Circuit",
+        "source": "DOJ-OGR-00000003",
+        "confidence": 1.0
+      },
+      {
+        "date": "March 12, 2024",
+        "event": "Oral argument held in Case 22-1426 before Second Circuit",
+        "actors": [
+          "Second Circuit Court of Appeals",
+          "Ghislaine Maxwell",
+          "United States of America"
+        ],
+        "significance": "Appellate argument on five questions of law arising from Maxwell's conviction",
+        "source": "DOJ-OGR-00000002",
+        "confidence": 1.0
+      },
+      {
+        "date": "September 17, 2024",
+        "event": "Second Circuit issued opinion affirming Maxwell's conviction",
+        "actors": [
+          "Jos\u00e9 A. Cabranes",
+          "Wesley",
+          "Lohier",
+          "Ghislaine Maxwell"
+        ],
+        "significance": "Final appellate ruling affirming all aspects of Maxwell's conviction and sentence",
+        "source": "DOJ-OGR-00000002",
+        "confidence": 1.0
+      }
+    ]
+  },
+  "evidence_ids": [
+    "a253c66e-a95c-482e-aa05-1778c3fc5ac1",
+    "0b035e3f-6ae6-44dd-9591-d717bc99fa6c",
+    "0c8b5715-1884-421f-a77b-e940b5a3ce84",
+    "1222036d-45f2-4452-8559-879c66512de0",
+    "f3923744-a3ab-4222-84e1-769fd802d0b9"
+  ],
+  "source_lookup": {
+    "DOJ-OGR-00000002 (DOJ-OGR-00000002)": {
+      "experience_id": "a253c66e-a95c-482e-aa05-1778c3fc5ac1",
+      "document_id": "DOJ-OGR-00000002",
+      "title": "DOJ-OGR-00000002"
+    },
+    "DOJ-OGR-00000003 (DOJ-OGR-00000003)": {
+      "experience_id": "0b035e3f-6ae6-44dd-9591-d717bc99fa6c",
+      "document_id": "DOJ-OGR-00000003",
+      "title": "DOJ-OGR-00000003"
+    },
+    "DOJ-OGR-00000004 (DOJ-OGR-00000004)": {
+      "experience_id": "0c8b5715-1884-421f-a77b-e940b5a3ce84",
+      "document_id": "DOJ-OGR-00000004",
+      "title": "DOJ-OGR-00000004"
+    },
+    "DOJ-OGR-00000005 (DOJ-OGR-00000005)": {
+      "experience_id": "1222036d-45f2-4452-8559-879c66512de0",
+      "document_id": "DOJ-OGR-00000005",
+      "title": "DOJ-OGR-00000005"
+    },
+    "DOJ-OGR-00000006 (DOJ-OGR-00000006)": {
+      "experience_id": "f3923744-a3ab-4222-84e1-769fd802d0b9",
+      "document_id": "DOJ-OGR-00000006",
+      "title": "DOJ-OGR-00000006"
+    }
+  }
+}

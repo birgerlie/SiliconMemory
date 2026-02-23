@@ -1,6 +1,6 @@
 # Silicon Memory
 
-Cognitive memory system for LLM augmentation. Four memory types (semantic, episodic, procedural, working) with reflection, entity resolution, salience profiles, and graph queries. Backed by SiliconDB (Apple Silicon-native storage).
+Cognitive memory system for LLM augmentation. Four memory types (semantic, episodic, procedural, working) with reflection, entity resolution, salience profiles, and graph queries. Backed by SiliconDB as a separate server.
 
 ## Commands
 
@@ -77,6 +77,10 @@ deps/silicondb/          # Git submodule — Swift storage engine with Python bi
 ## Architecture
 
 All operations are async. SiliconMemory is the main entry point (async context manager). Every operation requires a UserContext for multi-tenancy.
+
+Storage deployment assumption:
+- SiliconDB is a separate server process (not local-first).
+- The storage integration must treat SiliconDB as an async data plane with explicit consistency, retry, idempotency, and backpressure behavior.
 
 ```
 Client → SiliconMemory (router)

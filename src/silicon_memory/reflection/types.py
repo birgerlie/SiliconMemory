@@ -133,6 +133,7 @@ class ReflectionResult:
     patterns_found: list[Pattern] = field(default_factory=list)
     experiences_processed: int = 0
     consolidation: ConsolidationResult = field(default_factory=ConsolidationResult)
+    timings: dict[str, float] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=utc_now)
 
     @property
@@ -159,6 +160,10 @@ class ReflectionResult:
             lines.append(f"  MC contradictions: {c.mc_contradictions}")
             lines.append(f"  Triple contradictions: {c.triple_contradictions}")
             lines.append(f"  Uncertain beliefs: {c.uncertain_beliefs}")
+        if self.timings:
+            lines.append("  --- Timings (seconds) ---")
+            for key in sorted(self.timings.keys()):
+                lines.append(f"  {key}: {self.timings[key]:.3f}")
         return "\n".join(lines)
 
 
@@ -167,20 +172,38 @@ class ReflectionConfig:
     """Configuration for the reflection engine."""
 
     # Processing limits
-    max_experiences_per_batch: int = 100
+    max_experiences_per_batch: int = 0  # 0 = unlimited
     min_confidence_threshold: float = 0.5
 
     # Belief generation
     auto_commit_beliefs: bool = False  # Require manual approval
-    max_beliefs_per_cycle: int = 50
+    max_beliefs_per_cycle: int = 0  # 0 = unlimited; keep all extracted beliefs
     require_multiple_sources: bool = False  # Single LLM extraction is sufficient
+
+    # Consolidation bounds
+    max_consolidation_nodes: int = 0  # 0 = unlimited
 
     # LLM extraction settings
     llm_temperature: float = 0.3
-    extraction_chunk_size: int = 8  # experiences per LLM call
-    extraction_max_chars: int = 24000  # char limit per LLM call
-    extraction_max_items: int = 20  # max items per dimension per call
-    extraction_max_tokens: int = 4000  # max LLM output tokens
+    extraction_chunk_size: int = 30  # experiences per LLM call (pack many docs)
+    extraction_max_chars: int = 48000  # char limit per LLM call (~26-35 docs)
+    extraction_max_items: int = 12  # hard cap per dimension to control token spend
+    extraction_max_tokens: int = 2500  # cap extraction output size
+    allow_weak_extraction_model: bool = False  # diagnostics-only override for qwen3-4b class
+    empty_extracted_cooldown_s: float = 0.5  # skip repeated empty scans briefly
+    enable_observation_consolidation: bool = False  # expensive; keep opt-in for dev speed
+
+    # Dream-mode controls (token spend + runtime)
+    dream_max_communities: int = 4
+    dream_min_community_size: int = 3
+    dream_enable_hypothesis_generation: bool = True
+    dream_enable_procedure_detection: bool = False
+    dream_enable_question_generation: bool = False
+    dream_enable_entity_consolidation: bool = False
+    dream_enable_predicate_consolidation: bool = False
+    dream_enable_hypothesis_validation: bool = True
+    dream_max_hypothesis_validations: int = 50
+    dream_graph_call_timeout_s: float = 10.0
 
 
 @dataclass

@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980" role="img" aria-label="Silicon Memory Architecture">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f7fbff"/>
+      <stop offset="100%" stop-color="#eef5ff"/>
+    </linearGradient>
+    <linearGradient id="core" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1f6feb"/>
+      <stop offset="100%" stop-color="#0f4bb8"/>
+    </linearGradient>
+    <linearGradient id="agent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0a8f5b"/>
+      <stop offset="100%" stop-color="#086a44"/>
+    </linearGradient>
+    <linearGradient id="store" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7d4cc9"/>
+      <stop offset="100%" stop-color="#5f35a4"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#3a4a63"/>
+    </marker>
+    <style>
+      .title { font: 700 52px 'SF Pro Display', 'Segoe UI', sans-serif; fill: #1f2d3d; }
+      .subtitle { font: 400 22px 'SF Pro Text', 'Segoe UI', sans-serif; fill: #44566e; }
+      .box-title { font: 700 24px 'SF Pro Text', 'Segoe UI', sans-serif; fill: #ffffff; }
+      .box-body { font: 500 18px 'SF Pro Text', 'Segoe UI', sans-serif; fill: #ffffff; }
+      .label { font: 700 18px 'SF Pro Text', 'Segoe UI', sans-serif; fill: #24364b; }
+      .small { font: 500 16px 'SF Pro Text', 'Segoe UI', sans-serif; fill: #35506b; }
+      .panel { fill: #ffffff; stroke: #d9e6f5; stroke-width: 2; rx: 18; }
+      .arrow { stroke: #3a4a63; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .dot { fill: #2f81f7; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1600" height="980" fill="url(#bg)"/>
+
+  <text x="80" y="90" class="title">Silicon Memory</text>
+  <text x="80" y="128" class="subtitle">Cognitive memory system: ingest, extract, reflect, dream, and recall.</text>
+
+  <rect x="60" y="170" width="1480" height="760" class="panel"/>
+
+  <!-- Input / Ingestion -->
+  <rect x="110" y="230" width="300" height="130" rx="16" fill="url(#core)"/>
+  <text x="140" y="275" class="box-title">Ingestion</text>
+  <text x="140" y="307" class="box-body">Chats, docs, emails, meetings</text>
+  <text x="140" y="333" class="box-body">-> Experience records</text>
+
+  <!-- Extraction -->
+  <rect x="490" y="230" width="300" height="130" rx="16" fill="url(#core)"/>
+  <text x="520" y="275" class="box-title">Extraction</text>
+  <text x="520" y="307" class="box-body">Facts, relations, timeline events</text>
+  <text x="520" y="333" class="box-body">Entity + date normalization</text>
+
+  <!-- Belief Graph -->
+  <rect x="870" y="230" width="300" height="130" rx="16" fill="url(#store)"/>
+  <text x="900" y="275" class="box-title">Belief Graph</text>
+  <text x="900" y="307" class="box-body">Triplets + confidence + provenance</text>
+  <text x="900" y="333" class="box-body">Temporal anchors (occurred_on)</text>
+
+  <!-- SiliconDB -->
+  <rect x="1240" y="210" width="250" height="170" rx="16" fill="url(#store)"/>
+  <text x="1270" y="268" class="box-title">SiliconDB</text>
+  <text x="1270" y="300" class="box-body">gRPC storage layer</text>
+  <text x="1270" y="326" class="box-body">Hybrid recall + graph ops</text>
+
+  <!-- Reflection -->
+  <rect x="300" y="500" width="330" height="150" rx="16" fill="url(#agent)"/>
+  <text x="330" y="550" class="box-title">Reflection</text>
+  <text x="330" y="582" class="box-body">Incremental consolidation</text>
+  <text x="330" y="608" class="box-body">Contradiction + lifecycle updates</text>
+
+  <!-- Dream -->
+  <rect x="700" y="500" width="330" height="150" rx="16" fill="url(#agent)"/>
+  <text x="730" y="550" class="box-title">Dream</text>
+  <text x="730" y="582" class="box-body">Hypothesis discovery</text>
+  <text x="730" y="608" class="box-body">Procedure + question generation</text>
+
+  <!-- Runtime Outputs -->
+  <rect x="1100" y="500" width="360" height="300" rx="16" fill="#ffffff" stroke="#c7d9f0" stroke-width="2"/>
+  <text x="1130" y="545" class="label">Runtime Memory Products</text>
+
+  <circle cx="1145" cy="585" r="5" class="dot"/><text x="1165" y="591" class="small">Procedural memory (workflows)</text>
+  <circle cx="1145" cy="622" r="5" class="dot"/><text x="1165" y="628" class="small">Working memory (open questions)</text>
+  <circle cx="1145" cy="659" r="5" class="dot"/><text x="1165" y="665" class="small">Semantic memory (belief graph)</text>
+  <circle cx="1145" cy="696" r="5" class="dot"/><text x="1165" y="702" class="small">Episodic memory (experiences)</text>
+  <circle cx="1145" cy="733" r="5" class="dot"/><text x="1165" y="739" class="small">Temporal signals for recall</text>
+
+  <!-- Recall -->
+  <rect x="300" y="730" width="730" height="120" rx="16" fill="#ffffff" stroke="#c7d9f0" stroke-width="2"/>
+  <text x="330" y="775" class="label">Recall API</text>
+  <text x="330" y="807" class="small">Unified retrieval across semantic, episodic, procedural, and working layers with salience weighting.</text>
+
+  <!-- Arrows -->
+  <path d="M410 295 L490 295" class="arrow"/>
+  <path d="M790 295 L870 295" class="arrow"/>
+  <path d="M1170 295 L1240 295" class="arrow"/>
+
+  <path d="M1030 295 C1070 295, 1080 420, 865 500" class="arrow"/>
+  <path d="M920 360 C920 430, 500 450, 465 500" class="arrow"/>
+
+  <path d="M630 575 L700 575" class="arrow"/>
+  <path d="M1030 575 L1100 575" class="arrow"/>
+
+  <path d="M460 650 C460 700, 460 720, 520 730" class="arrow"/>
+  <path d="M860 650 C860 700, 860 720, 810 730" class="arrow"/>
+  <path d="M1240 800 C1100 840, 980 835, 930 835" class="arrow"/>
+
+  <text x="1220" y="870" class="small">Development profile: fast dream mode (toggle heavy phases)</text>
+</svg>

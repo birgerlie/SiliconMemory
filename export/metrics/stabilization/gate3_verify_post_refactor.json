@@ -1,0 +1,126 @@
+{
+  "docs_used": [
+    "DOJ-OGR-00000002",
+    "DOJ-OGR-00000003",
+    "DOJ-OGR-00000004",
+    "DOJ-OGR-00000005",
+    "DOJ-OGR-00000006"
+  ],
+  "doc_count": 5,
+  "record_experiences": true,
+  "ingest_visibility_ok": true,
+  "ingest_batch_state": "SUCCEEDED",
+  "ingest_batch_failed_count": 0,
+  "ingest_batch_errors": [],
+  "ingested_experience_count": 5,
+  "llm_mode": "local",
+  "llm_cache_mode": "record_replay",
+  "llm_cache_dir": "export/metrics/llm_cache",
+  "llm_preflight_timeout_s": 8.0,
+  "extraction_limits": {
+    "max_chars": 36000,
+    "max_items": 12,
+    "max_tokens": 2500
+  },
+  "extraction_diagnostics": {
+    "llm_extraction_calls": 1,
+    "limit_hit_chunks": {
+      "facts": 1
+    },
+    "limit_hit_chunks_total": 1
+  },
+  "llm_model": "qwen3-coder-80b",
+  "effective_tenant_id": "gate3-verify",
+  "effective_user_id": "gate3-user",
+  "patterns_total": 29,
+  "patterns_by_type": {
+    "fact": 12,
+    "relationship": 8,
+    "argument": 5,
+    "timeline_event": 4
+  },
+  "relationship_direction_counts": {
+    "forward": 4,
+    "reverse": 4
+  },
+  "committed_triplet_beliefs": 24,
+  "committed_triplet_predicates": {
+    "convicted of": 3,
+    "imprisoned for": 3,
+    "ordered to pay fine of": 1,
+    "ordered to pay total fine of": 1,
+    "coordinated and facilitated": 1,
+    "groomed": 1,
+    "provided access to": 1,
+    "entered into non-prosecution agreement with": 3,
+    "coordinated activities with": 2,
+    "appeals against": 2,
+    "prosecuted": 2,
+    "occurred_on": 4
+  },
+  "committed_document_beliefs": 5,
+  "reflection_processed_belief_docs": 29,
+  "claim_strategy": {
+    "observations_total": 29,
+    "canonical_claim_count": 27,
+    "claim_relation_counts": {
+      "NEW": 26,
+      "RELATED": 1,
+      "MERGE": 2
+    },
+    "unknown_observations": 5,
+    "unknown_reason_counts": {
+      "missing_label": 5
+    },
+    "provenance_completeness_rate": 1.0,
+    "non_trivial_claim_rate": 0.8621,
+    "insight_yield_per_doc": 4.6,
+    "merge_decision_rate": 0.069,
+    "contradiction_decision_rate": 0.0,
+    "temporal_implication_count": 4,
+    "testable_hypothesis_rate": null,
+    "avg_candidates_per_observation": 1.5172,
+    "llm_escalation_rate": 0.0,
+    "merge_precision": null,
+    "contradiction_precision": null,
+    "gates": {
+      "provenance_completeness_gte_0_98": true,
+      "merge_precision_gte_0_90": null,
+      "contradiction_precision_gte_0_85": null,
+      "testable_hypothesis_rate_gte_0_70": false
+    }
+  },
+  "reflection": {
+    "experiences_processed": 29,
+    "updated_beliefs": 41,
+    "timings": {
+      "query_extraction_journal": 0.1801,
+      "observation_consolidation": 0.0,
+      "infer_forward": 4.9596,
+      "infer_backward": 0.426,
+      "consolidate_beliefs": 11.5569,
+      "review_decisions": 0.1183,
+      "mark_reflection_processed": 0.3912,
+      "total": 17.6323
+    }
+  },
+  "retrieval_sanity": {
+    "timeout_s": 10.0,
+    "extraction_progress": {
+      "extracted": 5,
+      "unextracted": 0,
+      "total": 5
+    },
+    "recent_experiences_count": 5,
+    "direct_experience_visibility": {
+      "expected": 5,
+      "visible": 5
+    },
+    "unprocessed_experiences_count": 0,
+    "unextracted_experiences_count": 0,
+    "procedures_count": 0,
+    "working_keys_count": 0,
+    "open_questions_count": 0,
+    "errors": {}
+  }
+}

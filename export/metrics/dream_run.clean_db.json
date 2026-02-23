@@ -1,0 +1,29 @@
+{
+  "hypotheses_generated": 0,
+  "communities_found": 337,
+  "pagerank_computed": true,
+  "hypotheses_committed": 0,
+  "entities_consolidated": 17,
+  "questions_generated": 5,
+  "procedures_created": 3,
+  "predicate_consolidation_skipped": true,
+  "predicates_merged": 0,
+  "predicates_refitted": 0,
+  "hypotheses_validated": 0,
+  "generalizations_created": 13,
+  "beliefs_decayed": 0,
+  "beliefs_strengthened": 0,
+  "clusters_found": 50,
+  "cross_links_created": 0,
+  "timings": {
+    "hypotheses": 0.1,
+    "entity_consolidation": 5.9,
+    "questions": 14.9,
+    "procedures": 16.9,
+    "predicate_consolidation": 0.0,
+    "hypothesis_validation": 0.1,
+    "memory_consolidation": 0.4
+  },
+  "total_seconds": 17.3,
+  "elapsed_s": 17.3415
+}

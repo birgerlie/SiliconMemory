@@ -225,6 +225,44 @@ class TestDecisionRouter:
         mock_backend.record_decision_outcome.assert_awaited_once_with(decision_id, "Worked well")
 
     @pytest.mark.asyncio
+    async def test_get_decision_enriches_assumption_drift(self):
+        """Router get_decision adds per-assumption drift metadata."""
+        from silicon_memory.core.types import Belief
+        from silicon_memory.memory.silicondb_router import SiliconMemory
+
+        belief_id = uuid4()
+        decision = Decision(
+            title="Use PostgreSQL",
+            assumptions=[
+                Assumption(
+                    belief_id=belief_id,
+                    description="Team knows SQL",
+                    confidence_at_decision=0.9,
+                    is_critical=True,
+                )
+            ],
+        )
+        current_belief = Belief(id=belief_id, content="Team knows SQL", confidence=0.5)
+
+        mock_backend = AsyncMock()
+        mock_backend.get_decision = AsyncMock(return_value=decision)
+        mock_backend.get_belief = AsyncMock(return_value=current_belief)
+
+        memory = MagicMock(spec=SiliconMemory)
+        memory._backend = mock_backend
+        memory.get_decision = SiliconMemory.get_decision.__get__(memory, SiliconMemory)
+
+        result = await memory.get_decision(decision.id)
+
+        assert result is not None
+        drift = result.metadata.get("assumption_drift")
+        assert isinstance(drift, list) and len(drift) == 1
+        assert drift[0]["belief_id"] == str(belief_id)
+        assert drift[0]["current_confidence"] == 0.5
+        assert drift[0]["drift_threshold_exceeded"] is True
+        assert result.metadata.get("needs_revisit") is True
+
+    @pytest.mark.asyncio
     async def test_revise_decision_lifecycle(self):
         """Test full revision lifecycle: create → revise → original superseded."""
         original_id = uuid4()
@@ -284,7 +322,7 @@ class TestReflectionDecisionReview:
         mock_memory.recall_decisions = AsyncMock(return_value=[decision])
         mock_memory.get_belief = AsyncMock(return_value=current_belief)
         mock_memory._backend = AsyncMock()
-        mock_memory._backend.record_decision_outcome = AsyncMock(return_value=True)
+        mock_memory._backend.update_decision_status = AsyncMock(return_value=True)
 
         from silicon_memory.reflection.engine import ReflectionEngine
         from silicon_memory.reflection.types import ReflectionConfig
@@ -297,6 +335,7 @@ class TestReflectionDecisionReview:
 
         # Decision should have been flagged
         assert decision.status == DecisionStatus.REVISIT_SUGGESTED
+        mock_memory._backend.update_decision_status.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_reflection_ignores_non_critical_drift(self):

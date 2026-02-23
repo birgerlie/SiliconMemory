@@ -48,12 +48,20 @@ Built on SiliconDB's existing vector/text/graph hybrid search with Monte Carlo b
 │  Context Snapshots │  Salience Retrieval  │  News/External  │
 └──────────────────────────────┬──────────────────────────────┘
                                │
-                    SiliconDB (Storage Layer)
+               SiliconDB Server (Remote Storage Layer)
 ┌──────────────────────────────┴──────────────────────────────┐
 │  Edge Embeddings  │  Temporal Scoring  │  Belief Snapshots  │
 │  Graph Proximity  │  Custom Scoring    │  Existing features │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+### Deployment Assumption
+
+SiliconDB is deployed as a separate server process. The silicon-memory application layer interacts with it through an asynchronous data plane that must define:
+- write/read consistency contracts,
+- retry behavior,
+- idempotency for mutation operations,
+- and backpressure handling under load.
 
 ### Dependency Chain
 

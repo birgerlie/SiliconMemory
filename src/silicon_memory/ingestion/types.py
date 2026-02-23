@@ -95,3 +95,7 @@ class IngestionConfig:
     min_segment_length: int = 50
     llm_temperature: float = 0.3
     fallback_to_heuristic: bool = True
+    ingest_use_batch_api: bool = True
+    ingest_wait_for_visibility: bool = True
+    ingest_visibility_timeout_s: float = 5.0
+    ingest_visibility_poll_s: float = 0.1

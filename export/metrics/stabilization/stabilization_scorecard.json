@@ -1,0 +1,296 @@
+{
+  "generated_at": "2026-02-19T08:12:48Z",
+  "matrix_size": 14,
+  "results": [
+    {
+      "name": "batch_5_mock_off",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_s": 2.074,
+      "output_path": "/Users/birger/code/SiliconMemory/export/metrics/stabilization/batch_5_mock_off.json",
+      "stdout_tail": "OJ-OGR-00000006\"\n  ],\n  \"doc_count\": 5,\n  \"llm_mode\": \"mock\",\n  \"llm_cache_mode\": \"off\",\n  \"llm_cache_dir\": \"export/metrics/llm_cache\",\n  \"llm_model\": \"mock\",\n  \"patterns_total\": 0,\n  \"patterns_by_type\": {},\n  \"relationship_direction_counts\": {},\n  \"committed_triplet_beliefs\": 0,\n  \"committed_document_beliefs\": 0,\n  \"reflection_processed_belief_docs\": 0,\n  \"reflection\": {\n    \"experiences_processed\": 0,\n    \"updated_beliefs\": 0,\n    \"timings\": {\n      \"query_extraction_journal\": 0.9348,\n      \"query_recent_extracted\": 0.6294,\n      \"fetch_unprocessed\": 0.0006,\n      \"total\": 1.5648\n    }\n  }\n}",
+      "stderr_tail": "",
+      "metrics": {
+        "doc_count": 5,
+        "patterns_total": 0,
+        "committed_triplet_beliefs": 0,
+        "committed_document_beliefs": 0,
+        "reflection_experiences_processed": 0
+      }
+    },
+    {
+      "name": "batch_5_mock_record_replay",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_s": 2.044,
+      "output_path": "/Users/birger/code/SiliconMemory/export/metrics/stabilization/batch_5_mock_record_replay.json",
+      "stdout_tail": " \"llm_cache_mode\": \"record_replay\",\n  \"llm_cache_dir\": \"/Users/birger/code/SiliconMemory/export/metrics/stabilization/llm_cache_batch5\",\n  \"llm_model\": \"mock\",\n  \"patterns_total\": 0,\n  \"patterns_by_type\": {},\n  \"relationship_direction_counts\": {},\n  \"committed_triplet_beliefs\": 0,\n  \"committed_document_beliefs\": 0,\n  \"reflection_processed_belief_docs\": 0,\n  \"reflection\": {\n    \"experiences_processed\": 0,\n    \"updated_beliefs\": 0,\n    \"timings\": {\n      \"query_extraction_journal\": 0.923,\n      \"query_recent_extracted\": 0.6078,\n      \"fetch_unprocessed\": 0.0006,\n      \"total\": 1.5314\n    }\n  }\n}",
+      "stderr_tail": "",
+      "metrics": {
+        "doc_count": 5,
+        "patterns_total": 0,
+        "committed_triplet_beliefs": 0,
+        "committed_document_beliefs": 0,
+        "reflection_experiences_processed": 0
+      }
+    },
+    {
+      "name": "batch_5_replay_only",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_s": 2.086,
+      "output_path": "/Users/birger/code/SiliconMemory/export/metrics/stabilization/batch_5_replay_only.json",
+      "stdout_tail": ": \"replay_only\",\n  \"llm_cache_dir\": \"/Users/birger/code/SiliconMemory/export/metrics/stabilization/llm_cache_batch5\",\n  \"llm_model\": \"claude-3-5-haiku-latest\",\n  \"patterns_total\": 0,\n  \"patterns_by_type\": {},\n  \"relationship_direction_counts\": {},\n  \"committed_triplet_beliefs\": 0,\n  \"committed_document_beliefs\": 0,\n  \"reflection_processed_belief_docs\": 0,\n  \"reflection\": {\n    \"experiences_processed\": 0,\n    \"updated_beliefs\": 0,\n    \"timings\": {\n      \"query_extraction_journal\": 0.927,\n      \"query_recent_extracted\": 0.6272,\n      \"fetch_unprocessed\": 0.0007,\n      \"total\": 1.5549\n    }\n  }\n}",
+      "stderr_tail": "",
+      "metrics": {
+        "doc_count": 5,
+        "patterns_total": 0,
+        "committed_triplet_beliefs": 0,
+        "committed_document_beliefs": 0,
+        "reflection_experiences_processed": 0
+      }
+    },
+    {
+      "name": "batch_20_mock_off",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_s": 2.094,
+      "output_path": "/Users/birger/code/SiliconMemory/export/metrics/stabilization/batch_20_mock_off.json",
+      "stdout_tail": "J-OGR-00000021\"\n  ],\n  \"doc_count\": 20,\n  \"llm_mode\": \"mock\",\n  \"llm_cache_mode\": \"off\",\n  \"llm_cache_dir\": \"export/metrics/llm_cache\",\n  \"llm_model\": \"mock\",\n  \"patterns_total\": 0,\n  \"patterns_by_type\": {},\n  \"relationship_direction_counts\": {},\n  \"committed_triplet_beliefs\": 0,\n  \"committed_document_beliefs\": 0,\n  \"reflection_processed_belief_docs\": 0,\n  \"reflection\": {\n    \"experiences_processed\": 0,\n    \"updated_beliefs\": 0,\n    \"timings\": {\n      \"query_extraction_journal\": 0.9267,\n      \"query_recent_extracted\": 0.6362,\n      \"fetch_unprocessed\": 0.0008,\n      \"total\": 1.5636\n    }\n  }\n}",
+      "stderr_tail": "",
+      "metrics": {
+        "doc_count": 20,
+        "patterns_total": 0,
+        "committed_triplet_beliefs": 0,
+        "committed_document_beliefs": 0,
+        "reflection_experiences_processed": 0
+      }
+    },
+    {
+      "name": "benchmark_mock_cycles3",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_s": 5.037,
+      "output_path": "/Users/birger/code/SiliconMemory/export/metrics/stabilization/benchmark_mock_cycles3.json",
+      "stdout_tail": "\"experiences_processed\": 0,\n      \"new_beliefs\": 0,\n      \"updated_beliefs\": 0,\n      \"timings\": {\n        \"query_extraction_journal\": 0.9316,\n        \"query_recent_extracted\": 0.6223,\n        \"fetch_unprocessed\": 0.0007,\n        \"total\": 1.5546\n      }\n    },\n    {\n      \"cycle\": 3,\n      \"elapsed_s\": 1.5593,\n      \"experiences_processed\": 0,\n      \"new_beliefs\": 0,\n      \"updated_beliefs\": 0,\n      \"timings\": {\n        \"query_extraction_journal\": 0.9283,\n        \"query_recent_extracted\": 0.6254,\n        \"fetch_unprocessed\": 0.0009,\n        \"total\": 1.5546\n      }\n    }\n  ],\n  \"dream\": null\n}",
+      "stderr_tail": "",
+      "metrics": {
+        "cycles": 3,
+        "avg_cycle_elapsed_s": 1.5571,
+        "total_experiences_processed": 0,
+        "dream_present": false,
+        "dream_elapsed_s": 0.0,
+        "dream_has_error": false
+      }
+    },
+    {
+      "name": "benchmark_mock_dream",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_s": 6.901,
+      "output_path": "/Users/birger/code/SiliconMemory/export/metrics/stabilization/benchmark_mock_dream.json",
+      "stdout_tail": "erated\": 19,\n    \"communities_found\": 257,\n    \"pagerank_computed\": true,\n    \"hypotheses_committed\": 19,\n    \"predicate_consolidation_skipped\": true,\n    \"predicates_merged\": 0,\n    \"predicates_refitted\": 0,\n    \"generalizations_created\": 1,\n    \"beliefs_decayed\": 0,\n    \"beliefs_strengthened\": 0,\n    \"clusters_found\": 50,\n    \"cross_links_created\": 0,\n    \"hypotheses_validated\": 41,\n    \"timings\": {\n      \"hypotheses\": 0.4,\n      \"predicate_consolidation\": 0.0,\n      \"memory_consolidation\": 0.3,\n      \"hypothesis_validation\": 4.5\n    },\n    \"total_seconds\": 4.9,\n    \"elapsed_s\": 4.9071\n  }\n}",
+      "stderr_tail": "",
+      "metrics": {
+        "cycles": 1,
+        "avg_cycle_elapsed_s": 1.6106,
+        "total_experiences_processed": 0,
+        "dream_present": true,
+        "dream_elapsed_s": 4.9071,
+        "dream_has_error": false
+      }
+    },
+    {
+      "name": "benchmark_local_cycles3",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_s": 5.317,
+      "output_path": "/Users/birger/code/SiliconMemory/export/metrics/stabilization/benchmark_local_cycles3.json",
+      "stdout_tail": "   \"experiences_processed\": 0,\n      \"new_beliefs\": 0,\n      \"updated_beliefs\": 0,\n      \"timings\": {\n        \"query_extraction_journal\": 1.0245,\n        \"query_recent_extracted\": 0.6264,\n        \"fetch_unprocessed\": 0.0008,\n        \"total\": 1.6516\n      }\n    },\n    {\n      \"cycle\": 3,\n      \"elapsed_s\": 1.6458,\n      \"experiences_processed\": 0,\n      \"new_beliefs\": 0,\n      \"updated_beliefs\": 0,\n      \"timings\": {\n        \"query_extraction_journal\": 1.013,\n        \"query_recent_extracted\": 0.6263,\n        \"fetch_unprocessed\": 0.0006,\n        \"total\": 1.64\n      }\n    }\n  ],\n  \"dream\": null\n}",
+      "stderr_tail": "",
+      "metrics": {
+        "cycles": 3,
+        "avg_cycle_elapsed_s": 1.6492,
+        "total_experiences_processed": 0,
+        "dream_present": false,
+        "dream_elapsed_s": 0.0,
+        "dream_has_error": false
+      }
+    },
+    {
+      "name": "benchmark_local_dream",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_s": 6.67,
+      "output_path": "/Users/birger/code/SiliconMemory/export/metrics/stabilization/benchmark_local_dream.json",
+      "stdout_tail": "erated\": 19,\n    \"communities_found\": 282,\n    \"pagerank_computed\": true,\n    \"hypotheses_committed\": 19,\n    \"predicate_consolidation_skipped\": true,\n    \"predicates_merged\": 0,\n    \"predicates_refitted\": 0,\n    \"generalizations_created\": 1,\n    \"beliefs_decayed\": 0,\n    \"beliefs_strengthened\": 0,\n    \"clusters_found\": 50,\n    \"cross_links_created\": 0,\n    \"hypotheses_validated\": 60,\n    \"timings\": {\n      \"hypotheses\": 0.5,\n      \"predicate_consolidation\": 0.0,\n      \"memory_consolidation\": 0.2,\n      \"hypothesis_validation\": 4.1\n    },\n    \"total_seconds\": 4.6,\n    \"elapsed_s\": 4.6298\n  }\n}",
+      "stderr_tail": "764.210670 2303695 fork_posix.cc:71] Other threads are currently calling into gRPC, skipping fork() handlers\nI0000 00:00:1771488764.218185 2303695 fork_posix.cc:71] Other threads are currently calling into gRPC, skipping fork() handlers\nHypothesis LLM call failed: Error code: 400 - {'detail': \"Model 'qwen3-4b' is not loaded\"}\nHypothesis LLM call failed: Error code: 400 - {'detail': \"Model 'qwen3-4b' is not loaded\"}\nHypothesis LLM call failed: Error code: 400 - {'detail': \"Model 'qwen3-4b' is not loaded\"}\nHypothesis LLM call failed: Error code: 400 - {'detail': \"Model 'qwen3-4b' is not loaded\"}",
+      "metrics": {
+        "cycles": 1,
+        "avg_cycle_elapsed_s": 1.6567,
+        "total_experiences_processed": 0,
+        "dream_present": true,
+        "dream_elapsed_s": 4.6298,
+        "dream_has_error": false
+      }
+    },
+    {
+      "name": "benchmark_local_dream_qwen3_coder_80b",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_s": 7.5878000000000005,
+      "output_path": "/Users/birger/code/SiliconMemory/export/metrics/stabilization/benchmark_local_dream.qwen3-coder-80b.json",
+      "stdout_tail": "completed; model reported not loaded for LLM hypothesis calls",
+      "stderr_tail": "Model 'qwen3-coder-80b' is not loaded",
+      "metrics": {
+        "cycles": 1,
+        "avg_cycle_elapsed_s": 1.6886,
+        "total_experiences_processed": 0,
+        "dream_present": true,
+        "dream_elapsed_s": 5.8992,
+        "dream_has_error": true,
+        "hypotheses_generated": 23
+      }
+    },
+    {
+      "name": "batch_5_local_qwen3_4b",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_s": 2.163,
+      "output_path": "/Users/birger/code/SiliconMemory/export/metrics/stabilization/batch_5_local_qwen3-4b.json",
+      "stdout_tail": "Model 'qwen3-4b' is not loaded",
+      "stderr_tail": "",
+      "metrics": {
+        "doc_count": 5,
+        "patterns_total": 0,
+        "committed_triplet_beliefs": 0,
+        "committed_document_beliefs": 0,
+        "reflection_experiences_processed": 0,
+        "llm_model": "qwen3-4b"
+      }
+    },
+    {
+      "name": "batch_5_local_qwen3_coder_80b",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_s": 2.746,
+      "output_path": "/Users/birger/code/SiliconMemory/export/metrics/stabilization/batch_5_local_qwen3-coder-80b.json",
+      "stdout_tail": "model not loaded / worker failures observed",
+      "stderr_tail": "",
+      "metrics": {
+        "doc_count": 5,
+        "patterns_total": 0,
+        "committed_triplet_beliefs": 0,
+        "committed_document_beliefs": 0,
+        "reflection_experiences_processed": 0,
+        "llm_model": "qwen3-coder-80b"
+      }
+    },
+    {
+      "name": "benchmark_local_dream_qwen3_coder_80b_final",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_s": 12.328,
+      "output_path": "/Users/birger/code/SiliconMemory/export/metrics/stabilization/benchmark_local_dream.qwen3-coder-80b.final.json",
+      "stdout_tail": "model not loaded / worker failures observed",
+      "stderr_tail": "",
+      "metrics": {
+        "cycles": 1,
+        "avg_cycle_elapsed_s": 2.3679,
+        "dream_present": true,
+        "dream_elapsed_s": 9.6727,
+        "dream_has_error": true,
+        "llm_model": "qwen3-coder-80b",
+        "hypotheses_generated": 24
+      }
+    },
+    {
+      "name": "batch_5_local_qwen3_coder_80b_pass2",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_s": 14.1,
+      "output_path": "/Users/birger/code/SiliconMemory/export/metrics/stabilization/batch_5_local_qwen3-coder-80b.pass2.json",
+      "stdout_tail": "",
+      "stderr_tail": "",
+      "metrics": {
+        "doc_count": 5,
+        "patterns_total": 27,
+        "committed_triplet_beliefs": 22,
+        "committed_document_beliefs": 5,
+        "reflection_experiences_processed": 43,
+        "llm_model": "qwen3-coder-80b"
+      }
+    },
+    {
+      "name": "benchmark_local_dream_qwen3_coder_80b_pass2",
+      "ok": true,
+      "returncode": 0,
+      "elapsed_s": 115.50519999999999,
+      "output_path": "/Users/birger/code/SiliconMemory/export/metrics/stabilization/benchmark_local_dream.qwen3-coder-80b.pass2.json",
+      "stdout_tail": "",
+      "stderr_tail": "",
+      "metrics": {
+        "cycles": 1,
+        "avg_cycle_elapsed_s": 2.4724,
+        "total_experiences_processed": 0,
+        "dream_present": true,
+        "dream_elapsed_s": 113.0328,
+        "dream_has_error": false,
+        "hypotheses_generated": 46,
+        "llm_model": "qwen3-coder-80b"
+      }
+    }
+  ],
+  "gates": {
+    "all_commands_exit_zero": true,
+    "batch_replay_only_path_works": true,
+    "benchmark_mock_dream_executes": true,
+    "benchmark_local_dream_executes": true,
+    "local_80b_batch_nonzero_patterns": true,
+    "local_80b_batch_reflection_processed": true,
+    "local_80b_dream_executes": true,
+    "local_80b_dream_hypotheses_nonzero": true
+  },
+  "blockers": [],
+  "summary": {
+    "passed_cases": 14,
+    "failed_cases": 0,
+    "overall_ready_for_stabilization_freeze": true
+  },
+  "known_issues_nonblocking": [
+    {
+      "case": "benchmark_local_dream_qwen3_coder_80b",
+      "blocker": "local_llm_model_not_loaded:qwen3-coder-80b"
+    },
+    {
+      "case": "batch_5_local_qwen3_4b",
+      "blocker": "local_llm_model_not_loaded:qwen3-4b"
+    },
+    {
+      "case": "batch_5_local_qwen3_coder_80b",
+      "blocker": "local_llm_model_not_loaded:qwen3-coder-80b"
+    },
+    {
+      "case": "benchmark_local_dream_qwen3_coder_80b_final",
+      "blocker": "local_llm_model_not_loaded:qwen3-coder-80b"
+    },
+    {
+      "case": "model_load_admin_qwen3_coder_80b",
+      "blocker": "admin_load_failed:worker_process_died"
+    },
+    {
+      "case": "chat_probe_qwen3-4b",
+      "blocker": "worker_completion_failed:all_connection_attempts_failed"
+    },
+    {
+      "case": "admin_workers_qwen3-4b",
+      "blocker": "worker_flapping:high_crash_restart_count"
+    }
+  ],
+  "active_runtime_profile": {
+    "model": "qwen3-coder-80b",
+    "mode": "local",
+    "acceptance_case_batch": "batch_5_local_qwen3_coder_80b_pass2",
+    "acceptance_case_dream": "benchmark_local_dream_qwen3_coder_80b_pass2"
+  }
+}

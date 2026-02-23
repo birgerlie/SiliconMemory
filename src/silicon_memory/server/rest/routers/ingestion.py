@@ -68,6 +68,21 @@ async def ingest(
         metadata=body.metadata,
         llm_provider=scheduler,
     )
+    visibility_waited = False
+    visibility_ready = True
+
+    if body.wait_for_visibility:
+        visibility_waited = True
+        experience_ids_raw = result.details.get("experience_ids", [])
+        experience_ids = [str(x) for x in experience_ids_raw if str(x).strip()]
+        visibility_ready = await memory.wait_for_ingest_visibility(
+            experience_ids=experience_ids,
+            timeout_s=body.visibility_timeout_s,
+        )
+        if not visibility_ready:
+            result.errors.append(
+                "Ingest acknowledged, but not all experiences became searchable before timeout."
+            )
 
     return IngestResponse(
         experiences_created=result.experiences_created,
@@ -76,4 +91,6 @@ async def ingest(
         action_items_detected=result.action_items_detected,
         errors=result.errors,
         source_type=result.source_type,
+        visibility_waited=visibility_waited,
+        visibility_ready=visibility_ready,
     )

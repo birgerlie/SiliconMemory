@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from silicon_memory.core.types import Experience
+    from silicon_memory.ingestion.types import IngestionConfig, IngestionResult
+    from silicon_memory.memory.silicondb_router import SiliconMemory
 
 
 # Shared action item regex patterns used by all adapters.
@@ -80,3 +85,53 @@ def extract_action_items_from_text(
                 break  # Only match first pattern per line
 
     return action_items
+
+
+async def persist_experiences(
+    *,
+    memory: "SiliconMemory",
+    experiences: list["Experience"],
+    result: "IngestionResult",
+    config: "IngestionConfig",
+    item_label: str,
+) -> list[str]:
+    """Persist experiences with optional batch+visibility barrier.
+
+    Falls back to per-item writes when the memory implementation does not
+    expose a concrete class-level batch API (e.g., mocked memory objects).
+    """
+    if not experiences:
+        return []
+
+    use_batch = bool(getattr(config, "ingest_use_batch_api", True))
+    batch_method = getattr(type(memory), "ingest_experiences_batch", None)
+    if use_batch and callable(batch_method):
+        batch_result = await memory.ingest_experiences_batch(
+            experiences,
+            wait_for_visibility=bool(getattr(config, "ingest_wait_for_visibility", True)),
+            timeout_s=float(getattr(config, "ingest_visibility_timeout_s", 5.0)),
+            poll_interval_s=float(getattr(config, "ingest_visibility_poll_s", 0.1)),
+        )
+        created_ids = list(batch_result.receipt.accepted_experience_ids)
+        result.experiences_created += len(created_ids)
+        result.details["ingest_batch_state"] = batch_result.state
+        result.details["ingest_batch_failed_count"] = int(batch_result.receipt.failed_count)
+        if batch_result.visibility_ok is not None:
+            result.details["ingest_visibility_ok"] = bool(batch_result.visibility_ok)
+        for err in batch_result.receipt.errors:
+            result.errors.append(f"Failed to store {item_label}: {err}")
+        if created_ids:
+            result.details["experience_ids"] = created_ids
+        return created_ids
+
+    created_ids: list[str] = []
+    for i, exp in enumerate(experiences):
+        try:
+            await memory.record_experience(exp)
+            result.experiences_created += 1
+            created_ids.append(str(exp.id))
+        except Exception as e:  # noqa: PERF203
+            result.errors.append(f"Failed to store {item_label} {i}: {e}")
+    if created_ids:
+        result.details["experience_ids"] = created_ids
+    return created_ids

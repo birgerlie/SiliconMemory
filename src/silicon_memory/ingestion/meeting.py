@@ -13,6 +13,7 @@ from silicon_memory.ingestion.types import IngestionConfig, IngestionResult
 from silicon_memory.ingestion._helpers import (
     extract_action_items_from_text,
     parse_llm_json_array,
+    persist_experiences,
 )
 
 if TYPE_CHECKING:
@@ -129,6 +130,7 @@ class MeetingTranscriptAdapter:
 
         # Step 3: Create experiences for each segment
         user_ctx = memory.user_context
+        pending_experiences: list[Experience] = []
 
         for i, segment in enumerate(segments):
             segment.segment_index = i
@@ -150,10 +152,17 @@ class MeetingTranscriptAdapter:
                     user_id=user_ctx.user_id,
                     tenant_id=user_ctx.tenant_id,
                 )
-                await memory.record_experience(exp)
-                result.experiences_created += 1
+                pending_experiences.append(exp)
             except Exception as e:
                 result.errors.append(f"Failed to store segment {i}: {e}")
+
+        await persist_experiences(
+            memory=memory,
+            experiences=pending_experiences,
+            result=result,
+            config=self._config,
+            item_label="segment",
+        )
 
         # Step 4: Resolve entities (optional)
         if self._config.resolve_entities and self._entity_resolver:

@@ -53,6 +53,8 @@ def create_mcp_server(config: ServerConfig) -> FastMCP:
             _memory = SiliconMemory(
                 path=config.db_path,
                 user_context=_user_ctx,
+                db_grpc_host=config.db_grpc_host,
+                db_grpc_port=config.db_grpc_port,
                 language=config.language,
                 enable_graph=config.enable_graph,
                 auto_embedder=config.auto_embedder,
@@ -131,6 +133,7 @@ def create_mcp_server(config: ServerConfig) -> FastMCP:
             object: For beliefs — triplet object
             tags: Comma-separated tags
         """
+        nonlocal _scheduler_started
         from silicon_memory.llm.provider import classify_memory_type
 
         memory = _get_memory()
@@ -143,7 +146,6 @@ def create_mcp_server(config: ServerConfig) -> FastMCP:
         if memory_type == "auto":
             if not _scheduler_started:
                 await _scheduler.start()
-                nonlocal _scheduler_started
                 _scheduler_started = True
             memory_type, _ = await classify_memory_type(
                 _scheduler, content, priority=Priority.HIGH
@@ -398,6 +400,7 @@ def create_mcp_server(config: ServerConfig) -> FastMCP:
             action: "snapshot" to save, "resume" to restore, "list" to see snapshots
             task_context: Task identifier (e.g. "project-alpha/auth-module")
         """
+        nonlocal _scheduler_started
         memory = _get_memory()
 
         if action == "snapshot":
@@ -405,7 +408,6 @@ def create_mcp_server(config: ServerConfig) -> FastMCP:
                 return "task_context required for snapshot"
             if not _scheduler_started:
                 await _scheduler.start()
-                nonlocal _scheduler_started
                 _scheduler_started = True
             snapshot = await memory.create_snapshot(task_context, llm_provider=_scheduler)
             return (

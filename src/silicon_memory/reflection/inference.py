@@ -10,6 +10,7 @@ re-evaluate and update existing beliefs that share entities.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -104,9 +105,13 @@ class TransitiveInferenceEngine:
         result = InferenceResult()
 
         # Build adjacency from new beliefs
-        for belief in new_beliefs:
+        for i, belief in enumerate(new_beliefs):
             if not belief.triplet:
                 continue
+
+            # Yield event loop every 10 iterations to prevent blocking
+            if i > 0 and i % 10 == 0:
+                await asyncio.sleep(0)
 
             # Find 2-hop chains: new_belief.object == existing.subject
             chains = await self._find_chains_from(
@@ -122,6 +127,9 @@ class TransitiveInferenceEngine:
 
         # Deduplicate inferred beliefs
         result.inferred_beliefs = self._deduplicate(result.inferred_beliefs)
+
+        # Sort by confidence (highest first) but keep all
+        result.inferred_beliefs.sort(key=lambda b: b.confidence, reverse=True)
 
         logger.info(
             "Forward inference: %d paths explored, %d chains, %d inferred beliefs",
@@ -153,9 +161,13 @@ class TransitiveInferenceEngine:
         result = InferenceResult()
         backend = self._memory._backend
 
-        for belief in new_beliefs:
+        for i, belief in enumerate(new_beliefs):
             if not belief.triplet:
                 continue
+
+            # Yield event loop every 10 iterations
+            if i > 0 and i % 10 == 0:
+                await asyncio.sleep(0)
 
             # Find existing beliefs about the same subject
             try:
@@ -173,7 +185,6 @@ class TransitiveInferenceEngine:
                 if (existing.triplet.subject.lower() == belief.triplet.subject.lower()
                         and existing.triplet.predicate.lower() == belief.triplet.predicate.lower()):
                     if existing.triplet.object.lower() == belief.triplet.object.lower():
-                        # Corroboration: boost confidence via Bayesian observation
                         try:
                             await backend.update_belief_confidence(
                                 existing.id, delta=0.1
@@ -182,7 +193,6 @@ class TransitiveInferenceEngine:
                         except Exception:
                             pass
                     else:
-                        # Potential contradiction: record negative observation
                         try:
                             await backend.update_belief_confidence(
                                 existing.id, delta=-0.05
@@ -202,8 +212,6 @@ class TransitiveInferenceEngine:
             for existing in related_obj:
                 if not existing.triplet or existing.id == belief.id:
                     continue
-                # New evidence about an entity the existing belief mentions
-                # → record observation to slightly boost
                 if existing.triplet.subject.lower() == belief.triplet.object.lower():
                     try:
                         await backend.update_belief_confidence(
@@ -317,20 +325,14 @@ class TransitiveInferenceEngine:
         return chains
 
     def _chain_to_belief(self, chain: InferenceChain) -> Belief | None:
-        """Convert an inference chain into a new belief."""
+        """Convert an inference chain into a new belief.
+
+        Uses the full path description as the predicate rather than
+        blindly reusing the last hop's predicate, which causes nonsensical
+        beliefs like "Judge X inferred: committed crime".
+        """
         if chain.subject.lower() == chain.object.lower():
             return None  # Self-referential chain
-
-        # Build predicate from chain
-        predicates = [
-            b.triplet.predicate for b in chain.beliefs if b.triplet
-        ]
-        if len(predicates) == 2:
-            predicate = f"connected to via {predicates[0]} + {predicates[1]}"
-        elif len(predicates) == 3:
-            predicate = f"connected to via {predicates[0]} + {predicates[1]} + {predicates[2]}"
-        else:
-            predicate = "transitively connected to"
 
         evidence_ids = [b.id for b in chain.beliefs]
         chain_descriptions = [
@@ -338,9 +340,24 @@ class TransitiveInferenceEngine:
             for b in chain.beliefs if b.triplet
         ]
 
+        # Build a predicate that describes the transitive relationship
+        # e.g. "connected via: associated with -> convicted of"
+        predicates = [
+            b.triplet.predicate for b in chain.beliefs if b.triplet
+        ]
+        if len(predicates) >= 2:
+            predicate = f"connected via: {' -> '.join(predicates)}"
+        else:
+            predicate = "transitively connected to"
+
+        content = (
+            f"{chain.subject} {predicate} {chain.object} "
+            f"(inferred, {chain.hops}-hop chain)"
+        )
+
         return Belief(
             id=uuid4(),
-            content=f"{chain.subject} {predicate} {chain.object}",
+            content=content,
             triplet=Triplet(
                 subject=chain.subject,
                 predicate=predicate,

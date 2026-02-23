@@ -4,13 +4,18 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum
 from typing import Any, AsyncIterator, TYPE_CHECKING
 from uuid import uuid4
 
-from silicon_memory.core.types import Experience, Source, SourceType
+from silicon_memory.core.types import Experience
 from silicon_memory.memory.silicondb_router import RecallContext
+from silicon_memory.orchestration import (
+    ConversationEndResult,
+    ConversationScheduler,
+    ConversationSchedulerConfig,
+    SchedulerEventType,
+)
 from silicon_memory.tools.memory_tool import MemoryTool
 from silicon_memory.tools.query_tool import QueryTool
 from silicon_memory.security.types import UserContext
@@ -119,6 +124,14 @@ class MemoryClientConfig:
     # Session tracking
     session_id: str | None = None
 
+    # Conversation lifecycle scheduler
+    enable_conversation_scheduler: bool = False
+    conversation_scheduler: ConversationScheduler | None = None
+    conversation_scheduler_config: ConversationSchedulerConfig = field(
+        default_factory=ConversationSchedulerConfig
+    )
+    conversation_scheduler_llm: Any | None = None
+
 
 class MemoryAugmentedClient(ABC):
     """Base class for memory-augmented LLM clients.
@@ -159,6 +172,17 @@ class MemoryAugmentedClient(ABC):
         else:
             self._session_id = f"session-{uuid4().hex[:8]}"
 
+        self._conversation_scheduler: ConversationScheduler | None = None
+        if self._config.enable_conversation_scheduler:
+            self._conversation_scheduler = (
+                self._config.conversation_scheduler
+                or ConversationScheduler(
+                    memory=self._memory,
+                    llm=self._config.conversation_scheduler_llm,
+                    config=self._config.conversation_scheduler_config,
+                )
+            )
+
     @property
     def user_context(self) -> UserContext | None:
         """Get the user context from the memory system."""
@@ -197,6 +221,8 @@ class MemoryAugmentedClient(ABC):
         if use_memory and self._config.auto_recall:
             normalized, context_injected = await self._inject_context(normalized)
 
+        scheduler_signals = kwargs.pop("scheduler_signals", None)
+
         # Make the API call
         response = await self._call_api(normalized, **kwargs)
         response.memory_context_used = context_injected
@@ -206,6 +232,11 @@ class MemoryAugmentedClient(ABC):
             exp_id = await self._record_interaction(normalized, response)
             response.experience_recorded = True
             response.experience_id = exp_id
+            await self._run_conversation_tick(
+                normalized,
+                response.content,
+                signals=scheduler_signals,
+            )
 
         return response
 
@@ -227,6 +258,7 @@ class MemoryAugmentedClient(ABC):
         Yields:
             Response content chunks
         """
+        scheduler_signals = kwargs.pop("scheduler_signals", None)
         normalized = self._normalize_messages(messages)
 
         if use_memory and self._config.auto_recall:
@@ -242,6 +274,11 @@ class MemoryAugmentedClient(ABC):
         if record_experience and self._config.auto_record:
             response = ChatResponse(content="".join(full_content))
             await self._record_interaction(normalized, response)
+            await self._run_conversation_tick(
+                normalized,
+                response.content,
+                signals=scheduler_signals,
+            )
 
     @abstractmethod
     async def _call_api(
@@ -367,12 +404,7 @@ class MemoryAugmentedClient(ABC):
         response: ChatResponse,
     ) -> str | None:
         """Record the interaction as an experience."""
-        # Find the user message
-        user_content = ""
-        for msg in reversed(messages):
-            if msg.role in (MessageRole.USER, "user"):
-                user_content = msg.content
-                break
+        user_content = self._extract_last_user_message(messages)
 
         if not user_content:
             return None
@@ -392,6 +424,78 @@ class MemoryAugmentedClient(ABC):
 
         await self._memory.record_experience(experience)
         return str(experience.id)
+
+    def _extract_last_user_message(self, messages: list[ChatMessage]) -> str:
+        """Return the most recent user message content."""
+        for msg in reversed(messages):
+            if msg.role in (MessageRole.USER, "user"):
+                return msg.content
+        return ""
+
+    async def _run_conversation_tick(
+        self,
+        messages: list[ChatMessage],
+        assistant_content: str,
+        signals: dict[str, Any] | None = None,
+    ) -> None:
+        """Run active-session scheduler hook after each recorded turn."""
+        if self._conversation_scheduler is None:
+            return
+        user_content = self._extract_last_user_message(messages)
+        if not user_content:
+            return
+        await self._conversation_scheduler.on_interaction(
+            session_id=self._session_id,
+            user_message=user_content,
+            assistant_message=assistant_content,
+            signals=signals,
+        )
+
+    async def emit_scheduler_event(
+        self,
+        event_type: SchedulerEventType | str,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Emit a scheduler event with explicit runtime signals."""
+        if self._conversation_scheduler is None:
+            return {
+                "handled": False,
+                "reason": "conversation_scheduler_disabled",
+                "event_type": str(event_type),
+            }
+        outcome = await self._conversation_scheduler.emit_event(
+            event_type=event_type,
+            session_id=self._session_id,
+            payload=payload or {},
+        )
+        return outcome.to_dict()
+
+    async def end_conversation(
+        self,
+        task_context: str | None = None,
+        run_dream: bool | None = None,
+        signals: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Finalize conversation with summary + memory propagation."""
+        if self._conversation_scheduler is None:
+            snapshot = await self._memory.create_snapshot(task_context or self._session_id)
+            fallback = ConversationEndResult(
+                session_id=self._session_id,
+                turn_count=0,
+                task_context=task_context or self._session_id,
+                snapshot_created=True,
+                snapshot_id=str(snapshot.id),
+                summary=snapshot.summary,
+            )
+            return fallback.to_dict()
+
+        outcome = await self._conversation_scheduler.on_conversation_end(
+            session_id=self._session_id,
+            task_context=task_context,
+            run_dream=run_dream,
+            signals=signals,
+        )
+        return outcome.to_dict()
 
     async def set_context(self, key: str, value: Any, ttl_seconds: int = 300) -> None:
         """Set a value in working memory."""

@@ -1,0 +1,72 @@
+{
+  "config": {
+    "cycles": 5,
+    "max_experiences": 100,
+    "include_dream": false,
+    "db_grpc_host": "127.0.0.1",
+    "db_grpc_port": 8643
+  },
+  "runs": [
+    {
+      "cycle": 1,
+      "elapsed_s": 0.6395,
+      "experiences_processed": 0,
+      "new_beliefs": 0,
+      "updated_beliefs": 0,
+      "timings": {
+        "query_recent_extracted": 0.6384,
+        "fetch_unprocessed": 0.0009,
+        "total": 0.6394
+      }
+    },
+    {
+      "cycle": 2,
+      "elapsed_s": 0.0756,
+      "experiences_processed": 0,
+      "new_beliefs": 0,
+      "updated_beliefs": 0,
+      "timings": {
+        "query_recent_extracted": 0.075,
+        "fetch_unprocessed": 0.0006,
+        "total": 0.0756
+      }
+    },
+    {
+      "cycle": 3,
+      "elapsed_s": 0.0549,
+      "experiences_processed": 0,
+      "new_beliefs": 0,
+      "updated_beliefs": 0,
+      "timings": {
+        "query_recent_extracted": 0.054,
+        "fetch_unprocessed": 0.0009,
+        "total": 0.0549
+      }
+    },
+    {
+      "cycle": 4,
+      "elapsed_s": 0.0549,
+      "experiences_processed": 0,
+      "new_beliefs": 0,
+      "updated_beliefs": 0,
+      "timings": {
+        "query_recent_extracted": 0.0543,
+        "fetch_unprocessed": 0.0006,
+        "total": 0.0549
+      }
+    },
+    {
+      "cycle": 5,
+      "elapsed_s": 0.0541,
+      "experiences_processed": 0,
+      "new_beliefs": 0,
+      "updated_beliefs": 0,
+      "timings": {
+        "query_recent_extracted": 0.0535,
+        "fetch_unprocessed": 0.0005,
+        "total": 0.0541
+      }
+    }
+  ],
+  "dream": null
+}

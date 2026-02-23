@@ -1,0 +1,32 @@
+{
+  "docs_used": [
+    "DOJ-OGR-00000002",
+    "DOJ-OGR-00000003",
+    "DOJ-OGR-00000004",
+    "DOJ-OGR-00000005",
+    "DOJ-OGR-00000006"
+  ],
+  "doc_count": 5,
+  "patterns_total": 54,
+  "patterns_by_type": {
+    "fact": 31,
+    "relationship": 10,
+    "argument": 6,
+    "timeline_event": 7
+  },
+  "relationship_direction_counts": {
+    "forward": 5,
+    "reverse": 5
+  },
+  "belief_docs_committed": 54,
+  "belief_docs_reflection_processed": 0,
+  "reflection": {
+    "experiences_processed": 0,
+    "updated_beliefs": 0,
+    "timings": {
+      "query_recent_extracted": 0.7897,
+      "fetch_unprocessed": 0.0006,
+      "total": 0.7903
+    }
+  }
+}

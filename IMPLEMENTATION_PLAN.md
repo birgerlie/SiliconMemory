@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-Silicon Memory is a multi-layered cognitive memory system for LLM augmentation. The core storage layer is complete, backed by SiliconDB. This plan outlines the remaining work to make it production-ready.
+Silicon Memory is a multi-layered cognitive memory system for LLM augmentation. The storage layer is backed by SiliconDB as a separate server. This plan outlines remaining work to make the remote async data plane production-ready.
 
 **Current State**: Core memory system functional (semantic, episodic, procedural, working)
 **Remaining Work**: Reflection engine, graph queries, LLM integrations, examples
@@ -32,10 +32,17 @@ Silicon Memory is a multi-layered cognitive memory system for LLM augmentation. 
 │                     SiliconDBBackend                             │
 │            Temporal Decay │ Contradiction Detection              │
 ├─────────────────────────────────────────────────────────────────┤
-│                        SiliconDB                                 │
-│     mmap + WAL │ Metal GPU │ Auto-embedding │ Graph │ Beliefs   │
+│                  SiliconDB Server (Remote)                       │
+│  async transport │ consistency │ retries/idempotency │ batching  │
+│  backpressure    │ Metal GPU   │ auto-embedding      │ graph     │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+### Storage Deployment Assumption
+
+- SiliconDB is deployed as a separate server process.
+- silicon-memory communicates with SiliconDB over an async transport.
+- API and service design must explicitly handle: backpressure, consistency levels, retry policy, and idempotency keys for write operations.
 
 ---
 

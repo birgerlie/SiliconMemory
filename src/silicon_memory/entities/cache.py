@@ -30,6 +30,37 @@ class EntityCache:
         """Fast in-memory lookup. Returns canonical_id or None."""
         return self._alias_to_canonical.get(self._normalize(alias))
 
+    def lookup_with_context(self, alias: str, context_canonicals: set[str]) -> str | None:
+        """Resolve alias with document-level canonical context.
+
+        Strategy:
+        1. Direct alias lookup first.
+        2. If unresolved, try contextual last-token matching against canonicals
+           already present in the same document context.
+        """
+        direct = self.lookup(alias)
+        if direct:
+            return direct
+        if not context_canonicals:
+            return None
+
+        norm_alias = self._normalize(alias)
+        if not norm_alias:
+            return None
+
+        # Exact normalized canonical hit inside context.
+        for canonical in context_canonicals:
+            if self._normalize(canonical) == norm_alias:
+                return canonical
+
+        # Last-token fallback (e.g. "Epstein" -> "Jeffrey Epstein").
+        for canonical in context_canonicals:
+            parts = self._normalize(canonical).split(" ")
+            if parts and parts[-1] == norm_alias:
+                return canonical
+
+        return None
+
     def get_type(self, canonical_id: str) -> str | None:
         """Get entity type for a canonical ID."""
         return self._canonical_to_type.get(canonical_id)

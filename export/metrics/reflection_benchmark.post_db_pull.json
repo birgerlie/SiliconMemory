@@ -1,0 +1,48 @@
+{
+  "config": {
+    "cycles": 3,
+    "max_experiences": 100,
+    "include_dream": false,
+    "db_grpc_host": "127.0.0.1",
+    "db_grpc_port": 8643
+  },
+  "runs": [
+    {
+      "cycle": 1,
+      "elapsed_s": 0.0565,
+      "experiences_processed": 0,
+      "new_beliefs": 0,
+      "updated_beliefs": 0,
+      "timings": {
+        "query_recent_extracted": 0.0558,
+        "fetch_unprocessed": 0.0005,
+        "total": 0.0565
+      }
+    },
+    {
+      "cycle": 2,
+      "elapsed_s": 0.0004,
+      "experiences_processed": 0,
+      "new_beliefs": 0,
+      "updated_beliefs": 0,
+      "timings": {
+        "query_recent_extracted": 0.0,
+        "fetch_unprocessed": 0.0004,
+        "total": 0.0004
+      }
+    },
+    {
+      "cycle": 3,
+      "elapsed_s": 0.0004,
+      "experiences_processed": 0,
+      "new_beliefs": 0,
+      "updated_beliefs": 0,
+      "timings": {
+        "query_recent_extracted": 0.0,
+        "fetch_unprocessed": 0.0004,
+        "total": 0.0004
+      }
+    }
+  ],
+  "dream": null
+}

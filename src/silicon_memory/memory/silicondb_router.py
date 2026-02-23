@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, AsyncIterator
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from silicon_memory.core.utils import utc_now
 from silicon_memory.core.types import (
@@ -15,6 +15,7 @@ from silicon_memory.core.types import (
     KnowledgeProof,
     Procedure,
     RecallResult,
+    SourceType,
 )
 from silicon_memory.ingestion.types import IngestionAdapter, IngestionResult
 from silicon_memory.retrieval.salience import PROFILES, SalienceProfile
@@ -91,6 +92,27 @@ class RecallResponse:
     as_of: datetime
 
 
+@dataclass
+class IngestBatchReceipt:
+    """Batch ingest receipt for experience writes."""
+
+    batch_id: str
+    submitted_at: datetime
+    accepted_count: int
+    failed_count: int = 0
+    accepted_experience_ids: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+
+@dataclass
+class IngestBatchResult:
+    """Final result for a batch ingest operation."""
+
+    receipt: IngestBatchReceipt
+    state: str
+    visibility_ok: bool | None = None
+
+
 class SiliconMemory:
     """Unified memory interface backed by SiliconDB.
 
@@ -134,6 +156,14 @@ class SiliconMemory:
         self,
         path: str | Path,
         user_context: UserContext,
+        db_grpc_host: str = "127.0.0.1",
+        db_grpc_port: int = 8643,
+        db_retry_attempts: int = 3,
+        db_retry_base_ms: int = 100,
+        db_retry_max_ms: int = 2000,
+        db_request_timeout_s: float = 10.0,
+        db_max_inflight_mutations: int = 32,
+        db_idempotency_ttl_s: int = 600,
         language: str = "english",
         enable_graph: bool = True,
         auto_embedder: bool = True,
@@ -148,6 +178,14 @@ class SiliconMemory:
         Args:
             path: Path to the database
             user_context: Required user context for all operations
+            db_grpc_host: SiliconDB gRPC host when transport is "grpc"
+            db_grpc_port: SiliconDB gRPC port when transport is "grpc"
+            db_retry_attempts: Max retries for transient DB failures
+            db_retry_base_ms: Base backoff delay in milliseconds
+            db_retry_max_ms: Max backoff delay in milliseconds
+            db_request_timeout_s: Per-call timeout budget in seconds
+            db_max_inflight_mutations: Backpressure limit for concurrent writes
+            db_idempotency_ttl_s: TTL for write idempotency keys
             language: Language for text processing
             enable_graph: Enable graph relationships
             auto_embedder: Enable automatic embedding
@@ -165,6 +203,14 @@ class SiliconMemory:
 
         config = SiliconDBConfig(
             path=path,
+            grpc_host=db_grpc_host,
+            grpc_port=db_grpc_port,
+            retry_attempts=db_retry_attempts,
+            retry_base_ms=db_retry_base_ms,
+            retry_max_ms=db_retry_max_ms,
+            request_timeout_s=db_request_timeout_s,
+            max_inflight_mutations=db_max_inflight_mutations,
+            idempotency_ttl_s=db_idempotency_ttl_s,
             language=language,
             enable_graph=enable_graph,
             auto_embedder=auto_embedder,
@@ -174,12 +220,16 @@ class SiliconMemory:
 
         # Initialize security services
         self._forgetting_service = ForgettingService(self._backend)
-        self._transparency_service = TransparencyService(self._backend)
         self._inspector = MemoryInspector(self._backend)
         self._audit_logger = AuditLogger(
             self._backend,
             retention_days=self._security_config.audit_retention_days,
             log_reads=self._security_config.audit_read_operations,
+            max_entries=self._security_config.max_audit_entries,
+        )
+        self._transparency_service = TransparencyService(
+            self._backend,
+            max_access_log_entries=self._security_config.max_access_log_entries,
         )
 
         # Initialize snapshot service
@@ -258,6 +308,25 @@ class SiliconMemory:
 
         result = await self._backend.recall(**recall_kwargs)
 
+        if ctx.source_type:
+            mode = ctx.source_type.lower()
+
+            def _include(item: RecallResult) -> bool:
+                src_type = item.source.type if item.source else SourceType.OBSERVATION
+                is_external = src_type == SourceType.EXTERNAL
+                if mode == "external":
+                    return is_external
+                if mode == "internal":
+                    return not is_external
+                return True
+
+            result["facts"] = [x for x in result["facts"] if _include(x)]
+            result["experiences"] = [x for x in result["experiences"] if _include(x)]
+            result["procedures"] = [x for x in result["procedures"] if _include(x)]
+            result["total_items"] = (
+                len(result["facts"]) + len(result["experiences"]) + len(result["procedures"])
+            )
+
         return RecallResponse(
             facts=result["facts"],
             experiences=result["experiences"],
@@ -288,6 +357,23 @@ class SiliconMemory:
             seeds.append(ext_id)
 
         return seeds
+
+    async def build_knowledge_tree(
+        self,
+        cluster_size: int = 10,
+        max_levels: int = 5,
+    ) -> dict:
+        """Build a RAPTOR hierarchical tree over the document store."""
+        return await self._backend.build_raptor_tree(cluster_size, max_levels)
+
+    async def search_raptor(
+        self,
+        query: str,
+        k: int = 10,
+        tree_boost: float = 0.3,
+    ) -> list[RecallResult]:
+        """Search using RAPTOR hierarchical retrieval."""
+        return await self._backend.search_raptor_hybrid(query, k, tree_boost)
 
     async def what_do_you_know(
         self,
@@ -328,6 +414,19 @@ class SiliconMemory:
         """Find beliefs that contradict the given belief."""
         return await self._backend.find_contradictions(belief)
 
+    async def get_beliefs_from_experience(self, experience_id: UUID) -> list[Belief]:
+        """Get beliefs extracted from a specific experience."""
+        return await self._backend.get_beliefs_from_experience(experience_id)
+
+    async def update_belief_status(
+        self,
+        belief_id: UUID,
+        new_status: "BeliefStatus",
+        reason: str = "",
+    ) -> bool:
+        """Update a belief lifecycle status."""
+        return await self._backend.update_belief_status(belief_id, new_status, reason)
+
     # ========== Episodic Memory (Experiences) ==========
 
     async def record_experience(self, experience: Experience) -> None:
@@ -349,6 +448,102 @@ class SiliconMemory:
     async def mark_experiences_processed(self, experience_ids: list[UUID]) -> None:
         """Mark experiences as processed by reflection."""
         await self._backend.mark_experiences_processed(experience_ids)
+
+    async def get_unextracted_experiences(self, limit: int = 10000) -> list[Experience]:
+        """Get experiences not yet processed by extraction."""
+        return await self._backend.get_unextracted_experiences(limit)
+
+    async def mark_experiences_extracted(self, experience_ids: list[UUID]) -> None:
+        """Mark experiences as extracted."""
+        await self._backend.mark_experiences_extracted(experience_ids)
+
+    async def count_extraction_progress(self) -> dict[str, int]:
+        """Count extracted vs unextracted experiences."""
+        return await self._backend.count_extraction_progress()
+
+    async def wait_for_ingest_visibility(
+        self,
+        experience_ids: list[str],
+        timeout_s: float = 5.0,
+        poll_interval_s: float = 0.1,
+    ) -> bool:
+        """Wait until ingested experiences become visible in search."""
+        parsed: list[UUID] = []
+        for raw in experience_ids:
+            try:
+                parsed.append(UUID(str(raw)))
+            except Exception:
+                continue
+        if not parsed:
+            return True
+        return await self._backend.wait_for_experience_visibility(
+            parsed,
+            timeout_s=timeout_s,
+            poll_interval_s=poll_interval_s,
+        )
+
+    async def ingest_experiences_batch(
+        self,
+        experiences: list[Experience],
+        *,
+        wait_for_visibility: bool = True,
+        timeout_s: float = 5.0,
+        poll_interval_s: float = 0.1,
+    ) -> IngestBatchResult:
+        """Record a batch of experiences and optionally wait for visibility.
+
+        State values:
+        - SUCCEEDED: all accepted and (if requested) visibility reached
+        - PARTIAL: some writes failed but at least one accepted
+        - FAILED: no writes accepted
+        - TIMEOUT: accepted writes did not reach visibility within timeout
+        """
+        batch_id = str(uuid4())
+        accepted_ids: list[str] = []
+        errors: list[str] = []
+
+        for experience in experiences:
+            try:
+                await self.record_experience(experience)
+                accepted_ids.append(str(experience.id))
+            except Exception as exc:  # noqa: PERF203
+                errors.append(f"{experience.id}: {exc}")
+
+        receipt = IngestBatchReceipt(
+            batch_id=batch_id,
+            submitted_at=utc_now(),
+            accepted_count=len(accepted_ids),
+            failed_count=len(errors),
+            accepted_experience_ids=accepted_ids,
+            errors=errors,
+        )
+
+        if not accepted_ids:
+            return IngestBatchResult(
+                receipt=receipt,
+                state="FAILED",
+                visibility_ok=False if wait_for_visibility else None,
+            )
+
+        visibility_ok: bool | None = None
+        if wait_for_visibility:
+            visibility_ok = await self.wait_for_ingest_visibility(
+                accepted_ids,
+                timeout_s=timeout_s,
+                poll_interval_s=poll_interval_s,
+            )
+
+        if wait_for_visibility and not visibility_ok:
+            state = "TIMEOUT"
+        elif errors:
+            state = "PARTIAL"
+        else:
+            state = "SUCCEEDED"
+        return IngestBatchResult(
+            receipt=receipt,
+            state=state,
+            visibility_ok=visibility_ok,
+        )
 
     # ========== Procedural Memory (Procedures) ==========
 
@@ -450,7 +645,49 @@ class SiliconMemory:
         Returns:
             Decision or None
         """
-        return await self._backend.get_decision(decision_id)
+        decision = await self._backend.get_decision(decision_id)
+        if not decision:
+            return None
+
+        drift_items: list[dict[str, Any]] = []
+        for assumption in decision.assumptions:
+            current_confidence: float | None = None
+            try:
+                belief = await self._backend.get_belief(assumption.belief_id)
+                if belief is not None:
+                    current_confidence = belief.confidence
+            except Exception:
+                current_confidence = None
+
+            delta = (
+                (current_confidence - assumption.confidence_at_decision)
+                if current_confidence is not None
+                else None
+            )
+            abs_delta = abs(delta) if delta is not None else None
+            exceeds = bool(
+                assumption.is_critical
+                and abs_delta is not None
+                and abs_delta > 0.2
+            )
+            drift_items.append(
+                {
+                    "belief_id": str(assumption.belief_id),
+                    "description": assumption.description,
+                    "is_critical": assumption.is_critical,
+                    "confidence_at_decision": assumption.confidence_at_decision,
+                    "current_confidence": current_confidence,
+                    "delta": delta,
+                    "abs_delta": abs_delta,
+                    "drift_threshold_exceeded": exceeds,
+                }
+            )
+
+        decision.metadata["assumption_drift"] = drift_items
+        decision.metadata["needs_revisit"] = any(
+            item["drift_threshold_exceeded"] for item in drift_items
+        )
+        return decision
 
     async def record_outcome(
         self,
@@ -483,6 +720,18 @@ class SiliconMemory:
             The new Decision, or None if original not found
         """
         return await self._backend.revise_decision(decision_id, new_decision)
+
+    async def generate_decision_brief(
+        self,
+        question: str,
+        llm_provider: Any | None = None,
+    ) -> dict[str, Any]:
+        """Generate a structured decision brief for a question."""
+        from silicon_memory.decision.synthesis import DecisionBriefGenerator
+
+        generator = DecisionBriefGenerator(self, llm_provider=llm_provider)
+        brief = await generator.generate(question)
+        return brief.to_dict()
 
     # ========== Context Snapshots ==========
 

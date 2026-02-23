@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from collections import deque
 from enum import Enum
 from typing import Any, TYPE_CHECKING
 from uuid import uuid4
@@ -177,11 +178,12 @@ class AuditLogger:
         backend: "SiliconDBBackend | None" = None,
         retention_days: int = 90,
         log_reads: bool = False,
+        max_entries: int = 10_000,
     ) -> None:
         self._backend = backend
         self._retention_days = retention_days
         self._log_reads = log_reads
-        self._entries: list[AuditEntry] = []  # In-memory buffer
+        self._entries: deque[AuditEntry] = deque(maxlen=max_entries)
 
     async def log(
         self,
@@ -425,7 +427,10 @@ class AuditLogger:
         """
         cutoff = utc_now() - timedelta(days=self._retention_days)
         original_count = len(self._entries)
-        self._entries = [e for e in self._entries if e.timestamp >= cutoff]
+        self._entries = deque(
+            [e for e in self._entries if e.timestamp >= cutoff],
+            maxlen=self._entries.maxlen,
+        )
         return original_count - len(self._entries)
 
     async def get_statistics(
@@ -506,6 +511,42 @@ class AuditLogger:
             return AuditSeverity.DEBUG
 
         return AuditSeverity.INFO
+
+    async def get_audit_trail(
+        self,
+        user_ctx: UserContext,
+        from_time: datetime | None = None,
+        event_types: list[str] | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Get audit trail from SiliconDB event replay.
+
+        Uses native event replay when the backend supports it,
+        falling back to in-memory entries otherwise.
+        """
+        if self._backend:
+            try:
+                events = await self._backend.replay_mutations(
+                    from_time=from_time,
+                    limit=limit,
+                )
+                if events:
+                    return events
+            except Exception:
+                pass
+
+        # Fallback to in-memory entries
+        results = []
+        cutoff = from_time
+        for entry in reversed(self._entries):
+            if entry.tenant_id != user_ctx.tenant_id and not user_ctx.is_admin():
+                continue
+            if cutoff and entry.timestamp < cutoff:
+                continue
+            results.append(entry.to_dict())
+            if len(results) >= limit:
+                break
+        return results
 
     async def _persist_entry(self, entry: AuditEntry) -> None:
         """Persist an audit entry to the backend."""

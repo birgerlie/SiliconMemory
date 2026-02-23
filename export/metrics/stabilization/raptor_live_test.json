@@ -1,0 +1,98 @@
+{
+  "pre_build_stats": {
+    "levels": 3,
+    "nodesPerLevel": [
+      431,
+      79,
+      15
+    ],
+    "totalNodes": 525,
+    "buildTime": 0.0
+  },
+  "build": {
+    "levels": 3,
+    "nodesPerLevel": [
+      399,
+      74,
+      14
+    ],
+    "totalNodes": 487,
+    "buildTime": 8.584338375,
+    "elapsed_s": 8.59
+  },
+  "post_build_stats": {
+    "levels": 3,
+    "nodesPerLevel": [
+      431,
+      153,
+      29
+    ],
+    "totalNodes": 613,
+    "buildTime": 0.0
+  },
+  "comparisons": [
+    {
+      "query": "criminal convictions documented",
+      "regular_count": 5,
+      "regular_time_s": 0.097,
+      "raptor_count": 5,
+      "raptor_time_s": 0.268,
+      "raptor_levels": [
+        "?",
+        "?",
+        "?",
+        "?",
+        "?"
+      ]
+    },
+    {
+      "query": "who coordinated illegal activities",
+      "regular_count": 5,
+      "regular_time_s": 0.086,
+      "raptor_count": 5,
+      "raptor_time_s": 0.262,
+      "raptor_levels": [
+        "?",
+        "?",
+        "?",
+        "?",
+        "?"
+      ]
+    },
+    {
+      "query": "sentences and fines imposed",
+      "regular_count": 5,
+      "regular_time_s": 0.071,
+      "raptor_count": 5,
+      "raptor_time_s": 0.254,
+      "raptor_levels": [
+        "?",
+        "?",
+        "?",
+        "?",
+        "?"
+      ]
+    }
+  ],
+  "rebuild": {
+    "levels": 3,
+    "nodesPerLevel": [
+      399,
+      78,
+      15
+    ],
+    "totalNodes": 492,
+    "buildTime": 8.423830291,
+    "elapsed_s": 8.42
+  },
+  "post_rebuild_stats": {
+    "levels": 3,
+    "nodesPerLevel": [
+      431,
+      231,
+      44
+    ],
+    "totalNodes": 706,
+    "buildTime": 0.0
+  }
+}

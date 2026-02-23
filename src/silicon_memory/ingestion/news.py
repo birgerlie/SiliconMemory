@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from silicon_memory.core.types import Experience, Source, SourceType
 from silicon_memory.ingestion.types import IngestionConfig, IngestionResult
-from silicon_memory.ingestion._helpers import parse_llm_json_array
+from silicon_memory.ingestion._helpers import parse_llm_json_array, persist_experiences
 
 if TYPE_CHECKING:
     from silicon_memory.memory.silicondb_router import SiliconMemory
@@ -116,10 +116,18 @@ class NewsArticleAdapter:
                 user_id=user_ctx.user_id,
                 tenant_id=user_ctx.tenant_id,
             )
-            await memory.record_experience(exp)
-            result.experiences_created += 1
         except Exception as e:
             result.errors.append(f"Failed to store article experience: {e}")
+            return result
+
+        created_ids = await persist_experiences(
+            memory=memory,
+            experiences=[exp],
+            result=result,
+            config=self._config,
+            item_label="article experience",
+        )
+        if not created_ids:
             return result
 
         # Extract claims

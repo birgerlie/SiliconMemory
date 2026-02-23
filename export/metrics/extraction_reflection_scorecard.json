@@ -1,0 +1,66 @@
+{
+  "inputs": {
+    "gold_jsonl": "/Users/birger/code/epstein/SiliconMemory/export/gold/ner_gold_from_images.jsonl",
+    "rules_json": "/Users/birger/code/epstein/SiliconMemory/export/entity_rules.json",
+    "pred_output": "export/metrics/ner_predictions.scorecard.jsonl",
+    "ner_report_output": "export/metrics/ner_eval_report.scorecard.json",
+    "reflection_report_output": "export/metrics/reflection_benchmark.scorecard.json"
+  },
+  "steps": [
+    {
+      "step": "predict_ner",
+      "ok": true,
+      "log": "{\n  \"gold_rows\": 120,\n  \"pred_rows\": 120,\n  \"rules_detectors\": 69,\n  \"rules_extractors\": 69,\n  \"compiled_extractors\": 69,\n  \"output\": \"export/metrics/ner_predictions.scorecard.jsonl\"\n}"
+    },
+    {
+      "step": "eval_ner",
+      "ok": true,
+      "log": "{\n  \"gold_docs\": 120,\n  \"pred_docs\": 120,\n  \"scored_docs\": 120,\n  \"by_type\": {\n    \"people\": {\n      \"tp\": 61,\n      \"fp\": 536,\n      \"fn\": 261,\n      \"precision\": 0.1022,\n      \"recall\": 0.1894,\n      \"f1\": 0.1328\n    },\n    \"organizations\": {\n      \"tp\": 2,\n      \"fp\": 27,\n      \"fn\": 168,\n      \"precision\": 0.069,\n      \"recall\": 0.0118,\n      \"f1\": 0.0201\n    },\n    \"locations\": {\n      \"tp\": 40,\n      \"fp\": 9,\n      \"fn\": 86,\n      \"precision\": 0.8163,\n      \"recall\": 0.3175,\n      \"f1\": 0.4571\n    }\n  },\n  \"micro\": {\n    \"tp\": 103,\n    \"fp\": 572,\n    \"fn\": 515,\n    \"precision\": 0.1526,\n    \"recall\": 0.1667,\n    \"f1\": 0.1593\n  },\n  \"worst_docs\": [\n    {\n      \"doc_id\": \"DOJ-OGR-00008151\",\n      \"by_type\": {\n        \"people\": {\n          \"tp\": 0,\n          \"fp\": 35,\n          \"fn\": 13\n        },\n        \"organizations\": {\n          \"tp\": 0,\n          \"fp\": 1,\n          \"fn\": 5\n        },\n        \"locations\": {\n          \"tp\": 0,\n          \"fp\": 1,\n          \"fn\": 7\n        }\n      }\n    },\n    {\n      \"doc_id\": \"DOJ-OGR-00026168\",\n      \"by_type\": {\n        \"people\": {\n          \"tp\": 0,\n          \"fp\": 37,\n          \"fn\": 1\n        },\n        \"organizations\": {\n          \"tp\": 0,\n          \"fp\": 0,\n          \"fn\": 1\n        },\n        \"locations\": {\n          \"tp\": 0,\n          \"fp\": 0,\n          \"fn\": 1\n        }\n      }\n    },\n    {\n      \"doc_id\": \"DOJ-OGR-00030823\",\n      \"by_type\": {\n        \"people\": {\n          \"tp\": 0,\n          \"fp\": 11,\n          \"fn\": 28\n        },\n        \"organizations\": {\n          \"tp\": 0,\n          \"fp\": 0,\n          \"fn\": 1\n        },\n        \"locations\": {\n          \"tp\": 0,\n          \"fp\": 0,\n          \"fn\": 0\n        }\n      }\n    },\n    {\n      \"doc_id\": \"DOJ-OGR-00025053\",\n      \"by_type\": {\n        \"people\": {\n          \"tp\": 0,\n          \"fp\": 11,\n          \"fn\": 1\n        },\n        \"organizations\": {\n          \"tp\": 0,\n          \"fp\": 0,\n          \"fn\": 1\n        },\n        \"locations\": {\n          \"tp\": 0,\n          \"fp\": 0,\n          \"fn\": 22\n        }\n      }\n    },\n    {\n      \"doc_id\": \"DOJ-OGR-00020325\",\n      \"by_type\": {\n        \"people\": {\n          \"tp\": 4,\n          \"fp\": 24,\n          \"fn\": 0\n        },\n        \"organizations\": {\n          \"tp\": 0,\n          \"fp\": 1,\n          \"fn\": 3\n        },\n        \"locations\": {\n          \"tp\": 3,\n          \"fp\": 0,\n          \"fn\": 1\n        }\n      }\n    },\n    {\n      \"doc_id\": \"DOJ-OGR-00027437\",\n      \"by_type\": {\n        \"people\": {\n          \"tp\": 0,\n          \"fp\": 23,\n          \"fn\": 1\n        },\n        \"organizations\": {\n          \"tp\": 0,\n          \"fp\": 0,\n          \"fn\": 2\n        },\n        \"locations\": {\n          \"tp\": 0,\n          \"fp\": 0,\n          \"fn\": 3\n        }\n      }\n    },\n    {\n      \"doc_id\": \"DOJ-OGR-00032115\",\n      \"by_type\": {\n        \"people\": {\n          \"tp\": 9,\n          \"fp\": 15,\n          \"fn\": 1\n        },\n        \"organizations\": {\n          \"tp\": 0,\n          \"fp\": 0,\n          \"fn\": 5\n        },\n        \"locations\": {\n          \"tp\": 4,\n          \"fp\": 0,\n          \"fn\": 4\n        }\n      }\n    },\n    {\n      \"doc_id\": \"DOJ-OGR-00003318\",\n      \"by_type\": {\n        \"people\": {\n          \"tp\": 1,\n          \"fp\": 8,\n          \"fn\": 8\n        },\n        \"organizations\": {\n          \"tp\": 0,\n          \"fp\": 0,\n          \"fn\": 4\n        },\n        \"locations\": {\n          \"tp\": 1,\n          \"fp\": 1,\n          \"fn\": 1\n        }\n      }\n    },\n    {\n      \"doc_id\": \"DOJ-OGR-00021317\",\n      \"by_type\": {\n        \"people\": {\n          \"tp\": 0,\n          \"fp\": 12,\n          \"fn\": 4\n        },\n        \"organizations\": {\n          \"tp\": 0,\n          \"fp\": 1,\n          \"fn\": 5\n        },\n        \"locations\": {\n          \"tp\": 4,\n          \"fp\": 0,\n          \"fn\": 0\n        }\n      }\n    },\n    {\n      \"doc_id\": \"DOJ-OGR-00020720\",\n      \"by_type\": {\n        \"people\": {\n          \"tp\": 7,\n          \"fp\": 16,\n          \"fn\": 2\n        },\n        \"organizations\": {\n          \"tp\": 0,\n          \"fp\": 1,\n          \"fn\": 1\n        },\n        \"locations\": {\n          \"tp\": 1,\n          \"fp\": 0,\n          \"fn\": 0\n        }\n      }\n    },\n    {\n      \"doc_id\": \"DOJ-OGR-00023826\",\n      \"by_type\": {\n        \"people\": {\n          \"tp\": 0,\n          \"fp\": 9,\n          \"fn\": 6\n        },\n        \"organizations\": {\n          \"tp\": 0,\n          \"fp\": 0,\n          \"fn\": 3\n        },\n        \"locations\": {\n          \"tp\": 1,\n          \"fp\": 0,\n          \"fn\": 2\n        }\n      }\n    },\n    {\n      \"doc_id\": \"DOJ-OGR-00009563\",\n      \"by_type\": {\n        \"people\": {\n          \"tp\": 0,\n          \"fp\": 9,\n          \"fn\": 6\n        },\n        \"organizations\": {\n          \"tp\": 0,\n          \"fp\": 1,\n          \"fn\": 3\n        },\n        \"locations\": {\n          \"tp\": 1,\n          \"fp\": 0,\n          \"fn\": 0\n        }\n      }\n    },\n    {\n      \"doc_id\": \"DOJ-OGR-00004664\",\n      \"by_type\": {\n        \"people\": {\n          \"tp\": 0,\n          \"fp\": 5,\n          \"fn\": 5\n        },\n        \"organizations\": {\n          \"tp\": 0,\n          \"fp\": 1,\n          \"fn\": 3\n        },\n        \"locations\": {\n          \"tp\": 0,\n          \"fp\": 2,\n          \"fn\": 2\n        }\n      }\n    },\n    {\n      \"doc_id\": \"DOJ-OGR-00007635\",\n      \"by_type\": {\n        \"people\": {\n          \"tp\": 1,\n          \"fp\": 17,\n          \"fn\": 0\n        },\n        \"organizations\": {\n          \"tp\": 0,\n          \"fp\": 0,\n          \"fn\": 1\n        },\n        \"locations\": {\n          \"tp\": 0,\n          \"fp\": 0,\n          \"fn\": 0\n        }\n      }\n    },\n    {\n      \"doc_id\": \"DOJ-OGR-00016085\",\n      \"by_type\": {\n        \"people\": {\n          \"tp\": 0,\n          \"fp\": 12,\n          \"fn\": 1\n        },\n        \"organizations\": {\n          \"tp\": 0,\n          \"fp\": 2,\n          \"fn\": 1\n        },\n        \"locations\": {\n          \"tp\": 0,\n          \"fp\": 0,\n          \"fn\": 2\n        }\n      }\n    },\n    {\n      \"doc_id\": \"DOJ-OGR-00003057\",\n      \"by_type\": {\n        \"people\": {\n          \"tp\": 0,\n          \"fp\": 14,\n          \"fn\": 0\n        },\n        \"organizations\": {\n          \"tp\": 0,\n          \"fp\": 0,\n          \"fn\": 2\n        },\n        \"locations\": {\n          \"tp\": 0,\n          \"fp\": 1,\n          \"fn\": 0\n        }\n      }\n    },\n    {\n      \"doc_id\": \"DOJ-OGR-00015319\",\n      \"by_type\": {\n        \"people\": {\n          \"tp\": 0,\n          \"fp\": 16,\n          \"fn\": 0\n        },\n        \"organizations\": {\n          \"tp\": 0,\n          \"fp\": 0,\n          \"fn\": 1\n        },\n        \"locations\": {\n          \"tp\": 0,\n          \"fp\": 0,\n          \"fn\": 0\n        }\n      }\n    },\n    {\n      \"doc_id\": \"DOJ-OGR-00023576\",\n      \"by_type\": {\n        \"people\": {\n          \"tp\": 2,\n          \"fp\": 10,\n          \"fn\": 2\n        },\n        \"organizations\": {\n          \"tp\": 0,\n          \"fp\": 0,\n          \"fn\": 3\n        },\n        \"locations\": {\n          \"tp\": 1,\n          \"fp\": 0,\n          \"fn\": 1\n        }\n      }\n    },\n    {\n      \"doc_id\": \"DOJ-OGR-00031004\",\n      \"by_type\": {\n        \"people\": {\n          \"tp\": 0,\n          \"fp\": 12,\n          \"fn\": 2\n        },\n        \"organizations\": {\n          \"tp\": 0,\n          \"fp\": 0,\n          \"fn\": 1\n        },\n        \"locations\": {\n          \"tp\": 0,\n          \"fp\": 0,\n          \"fn\": 1\n        }\n      }\n    },\n    {\n      \"doc_id\": \"DOJ-OGR-00000800\",\n      \"by_type\": {\n        \"people\": {\n          \"tp\": 1,\n          \"fp\": 10,\n          \"fn\": 3\n        },\n        \"organizations\": {\n          \"tp\": 1,\n          \"fp\": 1,\n          \"fn\": 0\n        },\n        \"locations\": {\n          \"tp\": 3,\n          \"fp\": 1,\n          \"fn\": 0\n        }\n      }\n    }\n  ]\n}"
+    },
+    {
+      "step": "benchmark_reflection",
+      "ok": false,
+      "log": "skipped by flag"
+    }
+  ],
+  "extraction_quality": {
+    "micro": {
+      "tp": 103,
+      "fp": 572,
+      "fn": 515,
+      "precision": 0.1526,
+      "recall": 0.1667,
+      "f1": 0.1593
+    },
+    "by_type": {
+      "people": {
+        "tp": 61,
+        "fp": 536,
+        "fn": 261,
+        "precision": 0.1022,
+        "recall": 0.1894,
+        "f1": 0.1328
+      },
+      "organizations": {
+        "tp": 2,
+        "fp": 27,
+        "fn": 168,
+        "precision": 0.069,
+        "recall": 0.0118,
+        "f1": 0.0201
+      },
+      "locations": {
+        "tp": 40,
+        "fp": 9,
+        "fn": 86,
+        "precision": 0.8163,
+        "recall": 0.3175,
+        "f1": 0.4571
+      }
+    },
+    "gold_docs": 120,
+    "pred_docs": 120,
+    "scored_docs": 120
+  },
+  "reflection_performance": {}
+}

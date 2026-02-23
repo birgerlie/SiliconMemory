@@ -13,7 +13,7 @@ class LLMConfig:
     """
 
     base_url: str = "http://localhost:8000/v1"
-    model: str = "qwen3-4b"
+    model: str = "qwen3-30b"
     api_key: str = "not-needed"
     temperature: float = 0.7
     max_tokens: int = 1024

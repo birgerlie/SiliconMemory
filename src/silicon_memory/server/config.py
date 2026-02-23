@@ -30,6 +30,14 @@ class ServerConfig:
 
     # Storage
     db_path: Path = field(default_factory=lambda: Path("./silicon_memory.db"))
+    db_grpc_host: str = "127.0.0.1"
+    db_grpc_port: int = 8643
+    db_retry_attempts: int = 3
+    db_retry_base_ms: int = 100
+    db_retry_max_ms: int = 2000
+    db_request_timeout_s: float = 10.0
+    db_max_inflight_mutations: int = 32
+    db_idempotency_ttl_s: int = 600
 
     # LLM
     llm: LLMConfig = field(default_factory=LLMConfig)
@@ -38,6 +46,10 @@ class ServerConfig:
     reflect_interval: int = 1800  # seconds (30 min)
     reflect_max_experiences: int = 100
     reflect_auto_commit: bool = True
+    use_event_stream: bool = True  # Phase 3B: event-driven reflection
+    memory_pool_max_instances: int = 256
+    entity_unresolved_queue_max: int = 5000
+    entity_bootstrap_rules_json: Path | None = None
 
     # SiliconDB settings
     language: str = "english"

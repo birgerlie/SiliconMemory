@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1100" viewBox="0 0 1800 1100" role="img" aria-label="Silicon Memory visual architecture">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f8fbff"/>
+      <stop offset="55%" stop-color="#eef4ff"/>
+      <stop offset="100%" stop-color="#fdf8ff"/>
+    </linearGradient>
+    <radialGradient id="halo1" cx="0.15" cy="0.2" r="0.5">
+      <stop offset="0%" stop-color="#98c9ff" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#98c9ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="halo2" cx="0.88" cy="0.78" r="0.55">
+      <stop offset="0%" stop-color="#ffb19a" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#ffb19a" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="core" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1f6feb"/>
+      <stop offset="100%" stop-color="#124cb8"/>
+    </linearGradient>
+    <linearGradient id="cardBlue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2d7ef6"/>
+      <stop offset="100%" stop-color="#1860d1"/>
+    </linearGradient>
+    <linearGradient id="cardGreen" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1aa56e"/>
+      <stop offset="100%" stop-color="#0f7e53"/>
+    </linearGradient>
+    <linearGradient id="cardPurple" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#8a5ad3"/>
+      <stop offset="100%" stop-color="#6739b0"/>
+    </linearGradient>
+    <linearGradient id="cardOrange" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f59a31"/>
+      <stop offset="100%" stop-color="#dc6e15"/>
+    </linearGradient>
+
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#1e3557" flood-opacity="0.16"/>
+    </filter>
+    <filter id="softShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="7" stdDeviation="9" flood-color="#1e3557" flood-opacity="0.12"/>
+    </filter>
+
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M1,1 L11,6 L1,11 Z" fill="#334b70"/>
+    </marker>
+
+    <style>
+      .title { font: 700 62px 'Avenir Next', 'Segoe UI', sans-serif; fill: #1a2d47; }
+      .subtitle { font: 500 24px 'Avenir Next', 'Segoe UI', sans-serif; fill: #405d7d; }
+      .coreTitle { font: 700 40px 'Avenir Next', 'Segoe UI', sans-serif; fill: #ffffff; }
+      .coreBody { font: 500 22px 'Avenir Next', 'Segoe UI', sans-serif; fill: #e8f1ff; }
+      .cardTitle { font: 700 30px 'Avenir Next', 'Segoe UI', sans-serif; fill: #ffffff; }
+      .cardText { font: 500 20px 'Avenir Next', 'Segoe UI', sans-serif; fill: #f3f8ff; }
+      .stripTitle { font: 700 22px 'Avenir Next', 'Segoe UI', sans-serif; fill: #243853; }
+      .stripText { font: 500 18px 'Avenir Next', 'Segoe UI', sans-serif; fill: #395473; }
+      .caption { font: 600 18px 'Avenir Next', 'Segoe UI', sans-serif; fill: #2f4a67; }
+      .link { stroke: #334b70; stroke-width: 3.2; fill: none; marker-end: url(#arrow); stroke-linecap: round; }
+    </style>
+  </defs>
+
+  <rect width="1800" height="1100" fill="url(#bg)"/>
+  <rect width="1800" height="1100" fill="url(#halo1)"/>
+  <rect width="1800" height="1100" fill="url(#halo2)"/>
+
+  <text x="80" y="105" class="title">Silicon Memory</text>
+  <text x="80" y="146" class="subtitle">A cognitive memory engine for extraction, reflection, dreaming, and grounded recall.</text>
+
+  <!-- Core -->
+  <g filter="url(#shadow)">
+    <rect x="660" y="380" width="500" height="260" rx="34" fill="url(#core)"/>
+    <text x="710" y="470" class="coreTitle">Memory Core</text>
+    <text x="710" y="518" class="coreBody">Beliefs, Experiences, Procedures, Working Context</text>
+    <text x="710" y="554" class="coreBody">Confidence + Provenance + Temporal Anchors</text>
+    <text x="710" y="590" class="coreBody">Stored in SiliconDB (gRPC)</text>
+  </g>
+
+  <!-- Top row -->
+  <g filter="url(#softShadow)">
+    <rect x="120" y="250" width="360" height="170" rx="24" fill="url(#cardBlue)"/>
+    <text x="155" y="312" class="cardTitle">Ingestion</text>
+    <text x="155" y="352" class="cardText">Chats, docs, email, meetings</text>
+    <text x="155" y="382" class="cardText">-> episodic experiences</text>
+
+    <rect x="1320" y="250" width="360" height="170" rx="24" fill="url(#cardPurple)"/>
+    <text x="1355" y="312" class="cardTitle">Extraction</text>
+    <text x="1355" y="352" class="cardText">Facts, relations, timeline events</text>
+    <text x="1355" y="382" class="cardText">Entity/date normalization</text>
+  </g>
+
+  <!-- Mid row -->
+  <g filter="url(#softShadow)">
+    <rect x="120" y="700" width="360" height="170" rx="24" fill="url(#cardGreen)"/>
+    <text x="155" y="762" class="cardTitle">Reflection</text>
+    <text x="155" y="802" class="cardText">Incremental consolidation</text>
+    <text x="155" y="832" class="cardText">Belief lifecycle updates</text>
+
+    <rect x="1320" y="700" width="360" height="170" rx="24" fill="url(#cardOrange)"/>
+    <text x="1355" y="762" class="cardTitle">Dream</text>
+    <text x="1355" y="802" class="cardText">Hypotheses + procedures</text>
+    <text x="1355" y="832" class="cardText">Open-question generation</text>
+  </g>
+
+  <!-- Bottom strip -->
+  <g filter="url(#softShadow)">
+    <rect x="260" y="930" width="1280" height="120" rx="20" fill="#ffffff" stroke="#d7e4f3" stroke-width="2"/>
+  </g>
+  <text x="300" y="980" class="stripTitle">Recall Layer</text>
+  <text x="300" y="1012" class="stripText">Unified retrieval across semantic, episodic, procedural, and working memory with salience weighting.</text>
+
+  <!-- Connectors -->
+  <path d="M480 335 C570 335, 600 430, 660 480" class="link"/>
+  <path d="M1320 335 C1240 335, 1220 430, 1160 480" class="link"/>
+  <path d="M480 785 C580 785, 610 655, 690 610" class="link"/>
+  <path d="M1320 785 C1230 785, 1210 655, 1130 610" class="link"/>
+  <path d="M910 640 C910 735, 930 830, 930 930" class="link"/>
+
+  <!-- Layer chips -->
+  <g filter="url(#softShadow)">
+    <rect x="640" y="180" width="170" height="58" rx="15" fill="#ffffff" stroke="#cadcf0"/>
+    <text x="664" y="217" class="caption">Episodic</text>
+
+    <rect x="830" y="180" width="170" height="58" rx="15" fill="#ffffff" stroke="#cadcf0"/>
+    <text x="855" y="217" class="caption">Semantic</text>
+
+    <rect x="1020" y="180" width="170" height="58" rx="15" fill="#ffffff" stroke="#cadcf0"/>
+    <text x="1045" y="217" class="caption">Procedural</text>
+
+    <rect x="1210" y="180" width="170" height="58" rx="15" fill="#ffffff" stroke="#cadcf0"/>
+    <text x="1243" y="217" class="caption">Working</text>
+  </g>
+
+  <text x="80" y="1040" class="subtitle">Fast dev profile: toggle heavy dream phases while preserving extraction/temporal grounding.</text>
+</svg>

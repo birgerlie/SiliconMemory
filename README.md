@@ -18,7 +18,7 @@ On top of the memory system:
 - **Salience Profiles** - Context-aware retrieval weighting (debugging, architecture, planning)
 - **REST + MCP Server** - HTTP API and Model Context Protocol for LLM clients
 
-All storage is backed by [SiliconDB](https://github.com/birgerlie/silicondb), an Apple Silicon-native storage engine optimized for RAG workloads.
+All storage is backed by [SiliconDB](https://github.com/birgerlie/silicondb), deployed as a separate server process and accessed from silicon-memory as an async data plane.
 
 ## Architecture
 
@@ -42,8 +42,9 @@ All storage is backed by [SiliconDB](https://github.com/birgerlie/silicondb), an
 │                    LLM Provider (OpenAI v1 API)                  │
 │          Auto-classification │ Entity Bootstrap │ Reflection     │
 ├──────────────────────────────────────────────────────────────────┤
-│                     SiliconDB Storage Engine                     │
-│   mmap + WAL │ Metal GPU │ Auto-embedding │ Graph │ Beliefs     │
+│                     SiliconDB Server (Remote)                   │
+│   async data-plane │ consistency levels │ retries/idempotency   │
+│   backpressure     │ Metal GPU          │ Graph + Beliefs        │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -58,7 +59,7 @@ With server dependencies:
 pip install silicon-memory[server]
 ```
 
-Requires SiliconDB to be installed and `SILICONDB_LIBRARY_PATH` environment variable set.
+Design target: SiliconDB runs as a separate server. silicon-memory should use async remote transport semantics (queueing, consistency, retries, idempotency, and backpressure) instead of local-first assumptions.
 
 ## Quick Start
 
@@ -88,6 +89,10 @@ async with SiliconMemory("/path/to/db") as memory:
 ```bash
 # Start the server (requires SiliconServe on port 8000)
 silicon-memory-server --mode rest --port 8420 --llm-model qwen3-80b
+
+# Start with prebuilt bootstrap rules JSON
+silicon-memory-server --mode rest --port 8420 \
+  --entity-bootstrap-rules-json /Users/birger/code/epstein/SiliconMemory/bootstrap_rules.json
 
 # Store a memory (auto-classified by LLM)
 curl -X POST localhost:8420/api/v1/store \

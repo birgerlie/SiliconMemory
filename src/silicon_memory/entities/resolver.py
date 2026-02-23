@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections import deque
 from typing import TYPE_CHECKING
 
 from silicon_memory.entities.cache import EntityCache
@@ -31,12 +32,13 @@ class EntityResolver:
         rules: RuleEngine,
         learner: "RuleLearner | None" = None,
         store: "EntityRuleStore | None" = None,
+        max_unresolved_queue: int = 5000,
     ) -> None:
         self.cache = cache
         self.rules = rules
         self._learner = learner
         self._store = store
-        self._unresolved_queue: list[dict] = []
+        self._unresolved_queue: deque[dict] = deque(maxlen=max_unresolved_queue)
 
     # ------------------------------------------------------------------
     # Mutation helpers with auto-persist
@@ -129,12 +131,55 @@ class EntityResolver:
         if self._store:
             self._store.save_alias(alias, canonical_id, entity_type)
 
+    async def register_extracted_entities(
+        self,
+        entities: list[tuple[str, str, str]],
+    ) -> int:
+        """Bulk-register extracted entities into cache/store.
+
+        Input tuple: ``(alias, entity_type, canonical_id)``.
+        Adds two alias forms for person-like names:
+        - full name alias
+        - last-name alias (for contextual resolution within document)
+        """
+        registered = 0
+        seen: set[tuple[str, str, str]] = set()
+
+        for alias, entity_type, canonical_id in entities:
+            a = (alias or "").strip()
+            et = (entity_type or "entity").strip() or "entity"
+            c = (canonical_id or alias or "").strip()
+            if not a or not c:
+                continue
+
+            key = (a.lower(), et.lower(), c.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+
+            await self.register_alias(a, c, et)
+            registered += 1
+
+            # Auto-alias last name for person-like canonical names.
+            if et.lower() in {"person", "people", "human"}:
+                parts = [p for p in c.split(" ") if p]
+                if len(parts) >= 2:
+                    last_name = parts[-1]
+                    if len(last_name) >= 2:
+                        last_key = (last_name.lower(), et.lower(), c.lower())
+                        if last_key not in seen:
+                            seen.add(last_key)
+                            await self.register_alias(last_name, c, et)
+                            registered += 1
+
+        return registered
+
     async def learn_rules(self) -> int:
         """Trigger offline rule learning from unresolved queue."""
         if not self._learner or not self._unresolved_queue:
             return 0
         detectors, extractors = await self._learner.generate_rules(
-            self._unresolved_queue
+            list(self._unresolved_queue)
         )
         for d in detectors:
             self.add_detector(d)

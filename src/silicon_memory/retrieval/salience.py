@@ -37,6 +37,7 @@ class SalienceProfile:
     graph_proximity_weight: float = 0.15
     entropy_weight: float = 0.1
     entropy_direction: str = "prefer_low"
+    tree_boost: float = 0.0  # RAPTOR hierarchical retrieval boost
 
     def __post_init__(self) -> None:
         if self.entropy_direction not in ("prefer_low", "prefer_high"):
@@ -52,7 +53,7 @@ class SalienceProfile:
             Dictionary mapping weight names to values.  Includes entropy
             config so the recall pipeline can apply post-retrieval reranking.
         """
-        return {
+        weights = {
             "vector": self.vector_weight,
             "text": self.text_weight,
             "temporal": self.temporal_weight,
@@ -62,6 +63,9 @@ class SalienceProfile:
             "entropy_weight": self.entropy_weight,
             "entropy_direction": self.entropy_direction,
         }
+        if self.tree_boost > 0:
+            weights["tree_boost"] = self.tree_boost
+        return weights
 
     @property
     def total_weight(self) -> float:
@@ -73,6 +77,7 @@ class SalienceProfile:
             + self.confidence_weight
             + self.graph_proximity_weight
             + self.entropy_weight
+            + self.tree_boost
         )
 
 
@@ -107,5 +112,16 @@ PROFILES: dict[str, SalienceProfile] = {
         graph_proximity_weight=0.25,
         entropy_weight=0.05,
         entropy_direction="prefer_low",
+    ),
+    "deep_recall": SalienceProfile(
+        vector_weight=0.25,
+        text_weight=0.1,
+        temporal_weight=0.1,
+        temporal_half_life_days=90,
+        confidence_weight=0.1,
+        graph_proximity_weight=0.2,
+        entropy_weight=0.05,
+        entropy_direction="prefer_low",
+        tree_boost=0.2,
     ),
 }
