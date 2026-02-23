@@ -8,7 +8,7 @@ and consolidates them into canonical beliefs using existing infrastructure:
 3. Find near-duplicates via SiliconDB find_similar_triples (replaces SequenceMatcher)
 4. Cluster duplicates via union-find (replaces O(n^3) agglomerative)
 5. Merge clusters → consolidated beliefs (simple or LLM)
-6. Commit via SiliconDBBackend.commit_belief + Bayesian updates
+6. Commit via BeliefStore.commit_belief + Bayesian updates
 
 Observations are preserved as evidence; consolidated beliefs link back via
 evidence_for. Confidence grows with corroboration count.
@@ -21,7 +21,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from silicon_memory.core.types import (
@@ -35,7 +35,8 @@ from silicon_memory.entities.date_normalizer import normalize_date
 
 if TYPE_CHECKING:
     from silicon_memory.entities.resolver import EntityResolver
-    from silicon_memory.storage.silicondb_backend import SiliconDBBackend
+    from silicon_memory.storage.beliefs import BeliefStore
+    from silicon_memory.storage.engine import StorageLayer
 
 logger = logging.getLogger(__name__)
 
@@ -311,20 +312,22 @@ class ObservationConsolidator:
     embedding-based similarity search for duplicate detection.
 
     Usage:
-        consolidator = ObservationConsolidator(backend, resolver, llm=scheduler)
+        consolidator = ObservationConsolidator(storage, beliefs, resolver, llm=scheduler)
         observations = load_from_cache("extraction_cache/")
         result = await consolidator.consolidate(observations)
     """
 
     def __init__(
         self,
-        backend: "SiliconDBBackend",
-        resolver: "EntityResolver",
+        storage: StorageLayer,
+        beliefs: BeliefStore,
+        resolver: EntityResolver,
         llm: Any = None,
         similarity_threshold: float = 0.65,
         min_cluster_for_llm: int = 2,
     ) -> None:
-        self._backend = backend
+        self._storage = storage
+        self._beliefs = beliefs
         self._resolver = resolver
         self._llm = llm
         self._threshold = similarity_threshold
@@ -420,12 +423,12 @@ class ObservationConsolidator:
     # Step 2: Ingest observations — observe existing or insert new
     # ------------------------------------------------------------------
 
-    def _find_existing_triple(
+    async def _find_existing_triple(
         self, subject: str, predicate: str, object_value: str,
     ) -> str | None:
         """Return the external_id of an existing triple matching (s, p, o), or None."""
         try:
-            existing = self._backend._db.query_triples(
+            existing = await self._storage.query_triples(
                 subject=subject, predicate=predicate, k=50,
             )
             for t in existing:
@@ -449,19 +452,19 @@ class ObservationConsolidator:
         Returns (obs_id→external_id mapping, observation_count).
         """
         obs_to_ext: dict[UUID, str] = {}
-        prefix = self._backend._get_user_prefix()
+        prefix = self._storage.get_user_prefix()
         mc_observations = 0
 
         for obs in observations:
             # Check for existing triple with same (s, p, o)
-            existing_ext = self._find_existing_triple(
+            existing_ext = await self._find_existing_triple(
                 obs.subject, obs.predicate, obs.object,
             )
 
             if existing_ext:
                 # Triple already known — record observation (MC update)
                 try:
-                    self._backend._db.record_observation(
+                    await self._storage.record_observation(
                         external_id=existing_ext,
                         confirmed=True,
                         source=f"cache:{obs.source_doc}",
@@ -512,7 +515,7 @@ class ObservationConsolidator:
                 if source_meta:
                     metadata["source_metadata"] = source_meta
                 try:
-                    self._backend._db.insert_triple(
+                    await self._storage.insert_triple(
                         external_id=ext_id,
                         subject=obs.subject,
                         predicate=obs.predicate,
@@ -552,6 +555,69 @@ class ObservationConsolidator:
             return 0.0
         return len(ta & tb) / len(ta | tb)
 
+    async def _find_similar_pairs_native(
+        self,
+        observations: list[Observation],
+        obs_to_ext: dict[UUID, str],
+    ) -> list[tuple[UUID, UUID, float]] | None:
+        """Find near-duplicate pairs via SiliconDB GPU-accelerated similarity.
+
+        Uses find_similar_triples() for embedding-based comparison instead
+        of O(n²) token Jaccard. Returns None if the native API is unavailable
+        or triples lack embeddings, signalling fallback to _find_similar_pairs().
+        """
+        # Build reverse map: external_id → observation UUID
+        ext_to_obs: dict[str, UUID] = {ext: oid for oid, ext in obs_to_ext.items()}
+        if not ext_to_obs:
+            return None
+
+        pairs: list[tuple[UUID, UUID, float]] = []
+        seen_pairs: set[tuple[UUID, UUID]] = set()
+        native_calls = 0
+
+        for obs in observations:
+            ext_id = obs_to_ext.get(obs.id)
+            if not ext_id:
+                continue
+            try:
+                similar = await self._storage.find_similar_triples(
+                    ext_id, k=5, min_score=self._threshold,
+                )
+                native_calls += 1
+            except Exception:
+                if native_calls == 0:
+                    # API likely unavailable — fall back entirely
+                    return None
+                continue
+
+            for match in similar:
+                match_ext = (
+                    getattr(match, "external_id", None)
+                    or (match.get("external_id") if isinstance(match, dict) else None)
+                    or ""
+                )
+                match_score = float(
+                    getattr(match, "score", None)
+                    or (match.get("score") if isinstance(match, dict) else None)
+                    or 0.0
+                )
+                partner_obs_id = ext_to_obs.get(match_ext)
+                if not partner_obs_id or partner_obs_id == obs.id:
+                    continue
+                pair_key = (min(obs.id, partner_obs_id), max(obs.id, partner_obs_id))
+                if pair_key in seen_pairs:
+                    continue
+                seen_pairs.add(pair_key)
+                pairs.append((obs.id, partner_obs_id, match_score))
+
+        if native_calls == 0:
+            return None
+
+        logger.info(
+            "Native find_similar_triples: %d calls → %d pairs", native_calls, len(pairs),
+        )
+        return pairs
+
     async def _find_similar_pairs(
         self,
         observations: list[Observation],
@@ -559,12 +625,16 @@ class ObservationConsolidator:
     ) -> list[tuple[UUID, UUID, float]]:
         """Find near-duplicate observation pairs.
 
-        Groups observations by (normalized_subject, kind), then compares
-        predicate+object text within each group using token overlap.
-        This avoids reliance on embedding-based similarity search
-        which requires async indexing to complete first.
+        Prefers GPU-accelerated find_similar_triples() when available.
+        Falls back to grouping by (normalized_subject, kind) and comparing
+        predicate+object text via token overlap.
         """
-        # Group by (subject_lower, kind)
+        # Try native GPU-accelerated similarity first
+        native_pairs = await self._find_similar_pairs_native(observations, obs_to_ext)
+        if native_pairs is not None:
+            return native_pairs
+
+        # Fallback: group by (subject_lower, kind) + token Jaccard
         from collections import defaultdict
         groups: dict[tuple[str, str], list[Observation]] = defaultdict(list)
         for obs in observations:
@@ -794,7 +864,7 @@ class ObservationConsolidator:
 
             try:
                 # Check if this merged triple already exists
-                existing_ext = self._find_existing_triple(
+                existing_ext = await self._find_existing_triple(
                     triplet.subject, triplet.predicate, triplet.object,
                 )
 
@@ -802,7 +872,7 @@ class ObservationConsolidator:
                     # Already known — record N observations (whole cluster)
                     for obs in cluster.observations:
                         try:
-                            self._backend._db.record_observation(
+                            await self._storage.record_observation(
                                 external_id=existing_ext,
                                 confirmed=True,
                                 source=f"consolidation:{obs.source_doc}",
@@ -821,14 +891,14 @@ class ObservationConsolidator:
                 else:
                     # New canonical belief — commit it
                     belief = merged.to_belief()
-                    await self._backend.commit_belief(belief)
+                    await self._beliefs.commit_belief(belief)
                     consolidated.append(merged)
 
                     # Record N-1 corroboration observations on the new belief
-                    ext_id = self._backend._build_external_id("belief", belief.id)
+                    ext_id = self._storage.build_external_id("belief", belief.id)
                     for obs in cluster.observations[1:]:
                         try:
-                            self._backend._db.record_observation(
+                            await self._storage.record_observation(
                                 external_id=ext_id,
                                 confirmed=True,
                                 source=f"corroboration:{obs.source_doc}",
@@ -848,7 +918,7 @@ class ObservationConsolidator:
                 # the backend supports it. This preserves one canonical edge
                 # while folding corroborating duplicates.
                 target_ext = existing_ext if existing_ext else (
-                    self._backend._build_external_id("belief", merged.id)
+                    self._storage.build_external_id("belief", merged.id)
                 )
                 merge_sources = [
                     ext for ext in member_ext_ids
@@ -857,7 +927,7 @@ class ObservationConsolidator:
                 if merge_sources:
                     try:
                         unique_sources = list(dict.fromkeys(merge_sources))[:100]
-                        self._backend._db.merge_triples(
+                        await self._storage.merge_triples(
                             source_ids=unique_sources,
                             target_id=target_ext,
                         )
@@ -867,7 +937,7 @@ class ObservationConsolidator:
 
                 if len(member_ext_ids) >= 2:
                     try:
-                        self._backend._db.add_cooccurrences(
+                        await self._storage.add_cooccurrences(
                             member_ext_ids[:20],
                             session_id=f"consolidation-{cluster.id}",
                         )

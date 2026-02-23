@@ -181,8 +181,8 @@ class TestRecallWithSalience:
         """Create a mock SiliconMemory for testing recall."""
         from silicon_memory.memory.silicondb_router import SiliconMemory
 
-        mock_backend = AsyncMock()
-        mock_backend.recall = AsyncMock(return_value={
+        mock_knowledge = AsyncMock()
+        mock_knowledge.recall = AsyncMock(return_value={
             "facts": [],
             "experiences": [],
             "procedures": [],
@@ -191,11 +191,21 @@ class TestRecallWithSalience:
             "query": "test",
             "as_of": "2025-01-01T00:00:00",
         })
-        mock_backend.get_working = AsyncMock(return_value=None)
-        mock_backend.query_beliefs = AsyncMock(return_value=[])
+
+        mock_working = AsyncMock()
+        mock_working.get_working = AsyncMock(return_value=None)
+
+        mock_beliefs = AsyncMock()
+        mock_beliefs.query_beliefs = AsyncMock(return_value=[])
+
+        mock_storage = MagicMock()
+        mock_storage.build_external_id = MagicMock(return_value="t1/u1/belief-test")
 
         memory = MagicMock(spec=SiliconMemory)
-        memory._backend = mock_backend
+        memory._knowledge = mock_knowledge
+        memory._working = mock_working
+        memory._beliefs = mock_beliefs
+        memory._storage = mock_storage
         memory._user_context = MagicMock(user_id="u1", tenant_id="t1")
         memory.recall = types.MethodType(SiliconMemory.recall, memory)
         memory._resolve_context_seeds = types.MethodType(
@@ -210,7 +220,7 @@ class TestRecallWithSalience:
         ctx = RecallContext(query="Python")
         await memory.recall(ctx)
 
-        call_kwargs = memory._backend.recall.call_args[1]
+        call_kwargs = memory._knowledge.recall.call_args[1]
         assert "search_weights" not in call_kwargs
         assert call_kwargs["query"] == "Python"
 
@@ -221,7 +231,7 @@ class TestRecallWithSalience:
         ctx = RecallContext(query="test", salience_profile="decision_support")
         await memory.recall(ctx)
 
-        call_kwargs = memory._backend.recall.call_args[1]
+        call_kwargs = memory._knowledge.recall.call_args[1]
         assert "search_weights" in call_kwargs
         weights = call_kwargs["search_weights"]
         expected = PROFILES["decision_support"].to_search_weights()
@@ -235,7 +245,7 @@ class TestRecallWithSalience:
         ctx = RecallContext(query="test", salience_profile=custom)
         await memory.recall(ctx)
 
-        call_kwargs = memory._backend.recall.call_args[1]
+        call_kwargs = memory._knowledge.recall.call_args[1]
         assert "search_weights" in call_kwargs
         assert call_kwargs["search_weights"]["vector"] == 0.9
 
@@ -246,7 +256,7 @@ class TestRecallWithSalience:
         ctx = RecallContext(query="test", salience_profile="nonexistent")
         await memory.recall(ctx)
 
-        call_kwargs = memory._backend.recall.call_args[1]
+        call_kwargs = memory._knowledge.recall.call_args[1]
         assert "search_weights" not in call_kwargs
 
     async def test_different_profiles_produce_different_weights(self):
@@ -256,7 +266,7 @@ class TestRecallWithSalience:
             ctx = RecallContext(query="test", salience_profile=profile_name)
             await memory.recall(ctx)
 
-            call_kwargs = memory._backend.recall.call_args[1]
+            call_kwargs = memory._knowledge.recall.call_args[1]
             weights = call_kwargs["search_weights"]
             expected = PROFILES[profile_name].to_search_weights()
             assert weights == expected, f"Profile {profile_name} mismatch"
@@ -271,34 +281,42 @@ class TestBackendSearchWeightsWiring:
     """Verify that backend query methods receive and use search_weights."""
 
     async def test_recall_passes_search_weights_to_query_methods(self):
-        """Backend.recall() should forward search_weights to all query methods."""
-        from silicon_memory.storage.silicondb_backend import SiliconDBBackend
+        """KnowledgeQuery.recall() should forward search_weights to all query methods."""
+        from silicon_memory.storage.knowledge import KnowledgeQuery
 
-        backend = MagicMock(spec=SiliconDBBackend)
-        backend._query_beliefs_with_entropy = AsyncMock(return_value=[])
-        backend.query_experiences = AsyncMock(return_value=[])
-        backend.find_applicable_procedures = AsyncMock(return_value=[])
-        backend.get_all_working = AsyncMock(return_value={})
-        backend._decay_config = MagicMock()
-        backend.recall = types.MethodType(SiliconDBBackend.recall, backend)
+        kq = MagicMock(spec=KnowledgeQuery)
+        kq._beliefs = MagicMock()
+        kq._beliefs.query_beliefs_with_entropy = AsyncMock(return_value=[])
+        kq._experiences = MagicMock()
+        kq._experiences.query_experiences = AsyncMock(return_value=[])
+        kq._procedures = MagicMock()
+        kq._procedures.find_applicable_procedures = AsyncMock(return_value=[])
+        kq._working = MagicMock()
+        kq._working.get_all_working = AsyncMock(return_value={})
+        kq._s = MagicMock()
+        kq._s.config = MagicMock()
+        kq._s.config.use_native_temporal_decay = True
+        kq._s.config.use_native_entropy_rerank = True
+        kq._s.decay_config = MagicMock()
+        kq.recall = types.MethodType(KnowledgeQuery.recall, kq)
 
         weights = {"vector": 0.4, "text": 0.2, "temporal": 0.1,
                     "confidence": 0.2, "graph_proximity": 0.1,
                     "temporal_half_life_hours": 720,
                     "entropy_weight": 0.0, "entropy_direction": "prefer_low"}
 
-        await backend.recall("test query", search_weights=weights)
+        await kq.recall("test query", search_weights=weights)
 
-        # _query_beliefs_with_entropy should receive search_weights
-        bkw = backend._query_beliefs_with_entropy.call_args[1]
+        # query_beliefs_with_entropy should receive search_weights
+        bkw = kq._beliefs.query_beliefs_with_entropy.call_args[1]
         assert bkw["search_weights"] == weights
 
         # query_experiences should receive search_weights
-        ekw = backend.query_experiences.call_args[1]
+        ekw = kq._experiences.query_experiences.call_args[1]
         assert ekw["search_weights"] == weights
 
         # find_applicable_procedures should receive search_weights
-        pkw = backend.find_applicable_procedures.call_args[1]
+        pkw = kq._procedures.find_applicable_procedures.call_args[1]
         assert pkw["search_weights"] == weights
 
 
@@ -414,17 +432,24 @@ class TestGraphContextNodes:
         """Explicit graph_context_nodes should flow into search_weights."""
         from silicon_memory.memory.silicondb_router import SiliconMemory
 
-        mock_backend = AsyncMock()
-        mock_backend.recall = AsyncMock(return_value={
+        mock_knowledge = AsyncMock()
+        mock_knowledge.recall = AsyncMock(return_value={
             "facts": [], "experiences": [], "procedures": [],
             "working_context": {}, "total_items": 0,
             "query": "test", "as_of": "2025-01-01T00:00:00",
         })
-        mock_backend.get_working = AsyncMock(return_value=None)
-        mock_backend.query_beliefs = AsyncMock(return_value=[])
+        mock_working = AsyncMock()
+        mock_working.get_working = AsyncMock(return_value=None)
+        mock_beliefs = AsyncMock()
+        mock_beliefs.query_beliefs = AsyncMock(return_value=[])
+        mock_storage = MagicMock()
+        mock_storage.build_external_id = MagicMock(return_value="t1/u1/belief-test")
 
         memory = MagicMock(spec=SiliconMemory)
-        memory._backend = mock_backend
+        memory._knowledge = mock_knowledge
+        memory._working = mock_working
+        memory._beliefs = mock_beliefs
+        memory._storage = mock_storage
         memory._user_context = MagicMock(user_id="u1", tenant_id="t1")
         memory.recall = types.MethodType(SiliconMemory.recall, memory)
         memory._resolve_context_seeds = types.MethodType(
@@ -439,7 +464,7 @@ class TestGraphContextNodes:
         )
         await memory.recall(ctx)
 
-        call_kwargs = mock_backend.recall.call_args[1]
+        call_kwargs = mock_knowledge.recall.call_args[1]
         sw = call_kwargs["search_weights"]
         assert sw["graph_context_nodes"] == ["seed-1", "seed-2"]
 
@@ -452,20 +477,26 @@ class TestGraphContextNodes:
         mock_belief = MagicMock(spec=Belief)
         mock_belief.id = uuid4()
 
-        mock_backend = AsyncMock()
-        mock_backend.recall = AsyncMock(return_value={
+        mock_knowledge = AsyncMock()
+        mock_knowledge.recall = AsyncMock(return_value={
             "facts": [], "experiences": [], "procedures": [],
             "working_context": {}, "total_items": 0,
             "query": "test", "as_of": "2025-01-01T00:00:00",
         })
-        mock_backend.get_working = AsyncMock(return_value="machine learning")
-        mock_backend.query_beliefs = AsyncMock(return_value=[mock_belief])
-        mock_backend._build_external_id = MagicMock(
+        mock_working = AsyncMock()
+        mock_working.get_working = AsyncMock(return_value="machine learning")
+        mock_beliefs = AsyncMock()
+        mock_beliefs.query_beliefs = AsyncMock(return_value=[mock_belief])
+        mock_storage = MagicMock()
+        mock_storage.build_external_id = MagicMock(
             return_value=f"t1/u1/belief-{mock_belief.id}",
         )
 
         memory = MagicMock(spec=SiliconMemory)
-        memory._backend = mock_backend
+        memory._knowledge = mock_knowledge
+        memory._working = mock_working
+        memory._beliefs = mock_beliefs
+        memory._storage = mock_storage
         memory._user_context = MagicMock(user_id="u1", tenant_id="t1")
         memory.recall = types.MethodType(SiliconMemory.recall, memory)
         memory._resolve_context_seeds = types.MethodType(
@@ -478,7 +509,7 @@ class TestGraphContextNodes:
         )
         await memory.recall(ctx)
 
-        call_kwargs = mock_backend.recall.call_args[1]
+        call_kwargs = mock_knowledge.recall.call_args[1]
         sw = call_kwargs["search_weights"]
         assert "graph_context_nodes" in sw
         assert len(sw["graph_context_nodes"]) == 1

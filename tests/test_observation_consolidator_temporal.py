@@ -61,14 +61,20 @@ def test_load_from_cache_uses_item_source_and_emits_occurred_on(tmp_path: Path) 
 async def test_ingest_observation_adds_source_and_date_metadata() -> None:
     captured: list[dict] = []
 
-    class _DB:
-        def query_triples(self, subject: str, predicate: str, k: int = 50):  # noqa: ARG002
+    class _Storage:
+        def get_user_prefix(self) -> str:
+            return "tenant/user/"
+
+        def build_external_id(self, entity_type: str, entity_id: object) -> str:
+            return f"tenant/user/{entity_type}-{entity_id}"
+
+        async def query_triples(self, **kwargs):  # noqa: ARG002
             return []
 
-        def record_observation(self, external_id: str, confirmed: bool, source: str):  # noqa: ARG002
+        async def record_observation(self, external_id: str, confirmed: bool, source: str = ""):  # noqa: ARG002
             return None
 
-        def insert_triple(
+        async def insert_triple(
             self,
             external_id: str,
             subject: str,
@@ -76,6 +82,7 @@ async def test_ingest_observation_adds_source_and_date_metadata() -> None:
             object_value: str,
             probability: float,
             metadata: dict,
+            **kwargs,  # noqa: ARG002
         ) -> None:
             captured.append(
                 {
@@ -88,15 +95,9 @@ async def test_ingest_observation_adds_source_and_date_metadata() -> None:
                 },
             )
 
-    class _Backend:
-        def __init__(self) -> None:
-            self._db = _DB()
-
-        def _get_user_prefix(self) -> str:
-            return "tenant/user/"
-
     consolidator = ObservationConsolidator(
-        backend=_Backend(),
+        storage=_Storage(),
+        beliefs=object(),  # not used by _ingest_observations
         resolver=object(),  # not used by _ingest_observations
     )
     obs = Observation(
@@ -147,12 +148,19 @@ async def test_llm_merge_coerces_confidence_and_list_values() -> None:
         async def generate(self, prompt: str, max_tokens: int = 256, temperature: float = 0.2):  # noqa: ANN201, ARG002
             return '{"subject":["Alice"],"predicate":"works_with","object":["Bob"],"confidence":"0.83"}'
 
-    class _Backend:
+    class _Storage:
         def __init__(self) -> None:
             self._db = object()
 
+        def get_user_prefix(self) -> str:
+            return "tenant/user/"
+
+        def build_external_id(self, entity_type: str, entity_id: object) -> str:
+            return f"tenant/user/{entity_type}-{entity_id}"
+
     consolidator = ObservationConsolidator(
-        backend=_Backend(),
+        storage=_Storage(),
+        beliefs=object(),
         resolver=object(),
         llm=_LLM(),
     )

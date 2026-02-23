@@ -10,34 +10,18 @@ from silicon_memory.reflection.engine import ReflectionEngine
 from silicon_memory.reflection.types import ReflectionConfig
 
 
-class _BackendStub:
+class _StorageStub:
     NODE_TYPE_BELIEF = "belief"
 
     def __init__(self, results: list[dict]) -> None:
         self._results = results
         self.allowed_prefix = "tenant/user/"
 
-    def _search_by_type(self, query: str, node_types: set[str], target: int) -> list[dict]:  # noqa: ARG002
+    def search_by_type(self, query: str, node_types: set[str], target: int) -> list[dict]:  # noqa: ARG002
         return list(self._results)
 
-    @staticmethod
-    def _rget(item: dict, key: str, default=None):  # noqa: ANN001
-        return item.get(key, default)
-
-    def _can_access(self, metadata: dict, _external_id: str = "") -> bool:  # noqa: ARG002
+    def can_access(self, metadata: dict, _external_id: str = "") -> bool:  # noqa: ARG002
         return _external_id.startswith(self.allowed_prefix)
-
-    def _search_result_to_belief(self, result: dict) -> Belief | None:
-        metadata = result.get("metadata") or {}
-        belief_id_raw = str(metadata.get("belief_id") or "").strip()
-        if not belief_id_raw:
-            return None
-        return Belief(
-            id=UUID(belief_id_raw),
-            content=str(metadata.get("content") or ""),
-            confidence=0.8,
-            tags=set(metadata.get("tags") or []),
-        )
 
 
 @pytest.mark.asyncio
@@ -72,8 +56,8 @@ async def test_recent_extracted_beliefs_respect_access_scope() -> None:
             },
         },
     ]
-    backend = _BackendStub(results)
-    memory = SimpleNamespace(_backend=backend)
+    storage = _StorageStub(results)
+    memory = SimpleNamespace(_storage=storage)
     engine = ReflectionEngine(
         memory=memory,
         llm=object(),

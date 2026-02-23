@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import time
 
 from fastapi import APIRouter, Request
@@ -14,10 +15,17 @@ router = APIRouter()
 @router.get("/health")
 async def health(request: Request) -> HealthResponse:
     elapsed = time.monotonic() - request.app.state.start_time
+
+    worker_health = None
+    registry = getattr(request.app.state, "worker_registry", None)
+    if registry is not None:
+        worker_health = registry.health()
+
     return HealthResponse(
         status="ok",
         version="0.1.0",
         uptime_seconds=round(elapsed, 1),
+        workers=worker_health,
     )
 
 
@@ -34,16 +42,20 @@ async def status(request: Request) -> StatusResponse:
     if instances:
         backend = getattr(instances[0], "_backend", None)
         if backend:
-            try:
+            with contextlib.suppress(Exception):
                 event_stream = await backend.get_event_stats()
-                # Also include worker event status
-                worker = getattr(request.app.state, "worker", None)
-                if worker and event_stream is not None:
-                    event_stream["event_driven_active"] = getattr(
-                        worker, "event_stream_active", False
-                    )
-            except Exception:
-                pass
+
+    # Worker health from registry
+    worker_health = None
+    registry = getattr(request.app.state, "worker_registry", None)
+    if registry is not None:
+        worker_health = registry.health()
+        # Include event_driven_active summary in event_stream
+        if event_stream is not None:
+            active_streams = sum(
+                1 for w in registry.workers if w.event_stream_active
+            )
+            event_stream["event_driven_workers"] = active_streams
 
     return StatusResponse(
         status="ok",
@@ -54,4 +66,5 @@ async def status(request: Request) -> StatusResponse:
         reflection_count=ref_count,
         mode=request.app.state.config.mode,
         event_stream=event_stream if event_stream else None,
+        workers=worker_health,
     )

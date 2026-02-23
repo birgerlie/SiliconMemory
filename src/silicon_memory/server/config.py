@@ -47,6 +47,7 @@ class ServerConfig:
     reflect_max_experiences: int = 100
     reflect_auto_commit: bool = True
     use_event_stream: bool = True  # Phase 3B: event-driven reflection
+    event_log_capacity: int = 100_000
     memory_pool_max_instances: int = 256
     entity_unresolved_queue_max: int = 5000
     entity_bootstrap_rules_json: Path | None = None

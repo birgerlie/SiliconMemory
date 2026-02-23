@@ -131,7 +131,7 @@ class TestRuleBasedSummary:
             user_id="user-1", tenant_id="acme", session_id="s1"
         )
         backend = MagicMock()
-        return SnapshotService(memory=memory, backend=backend, config=config)
+        return SnapshotService(memory=memory, snapshots=backend, config=config)
 
     def test_basic_summary(self):
         """Test rule-based summary with working memory and experiences."""
@@ -234,7 +234,7 @@ class TestSnapshotServiceMocked:
         """Test creating a snapshot stores it in the backend."""
         service = SnapshotService(
             memory=mock_memory,
-            backend=mock_backend,
+            snapshots=mock_backend,
         )
 
         snapshot = await service.create_snapshot("project-alpha")
@@ -254,7 +254,7 @@ class TestSnapshotServiceMocked:
 
         mock_memory.get_recent_experiences = AsyncMock(return_value=[exp1])
 
-        service = SnapshotService(memory=mock_memory, backend=mock_backend)
+        service = SnapshotService(memory=mock_memory, snapshots=mock_backend)
         snapshot = await service.create_snapshot("proj")
 
         assert exp1.id in snapshot.recent_experiences
@@ -264,7 +264,7 @@ class TestSnapshotServiceMocked:
         expected = ContextSnapshot(task_context="proj", summary="test")
         mock_backend.query_snapshots_by_context = AsyncMock(return_value=[expected])
 
-        service = SnapshotService(memory=mock_memory, backend=mock_backend)
+        service = SnapshotService(memory=mock_memory, snapshots=mock_backend)
         result = await service.get_latest_snapshot("proj")
 
         assert result is expected
@@ -276,7 +276,7 @@ class TestSnapshotServiceMocked:
         """Test that None is returned when no snapshot exists."""
         mock_backend.query_snapshots_by_context = AsyncMock(return_value=[])
 
-        service = SnapshotService(memory=mock_memory, backend=mock_backend)
+        service = SnapshotService(memory=mock_memory, snapshots=mock_backend)
         result = await service.get_latest_snapshot("nonexistent")
 
         assert result is None
@@ -289,7 +289,7 @@ class TestSnapshotServiceMocked:
         ]
         mock_backend.query_snapshots_by_context = AsyncMock(return_value=snaps)
 
-        service = SnapshotService(memory=mock_memory, backend=mock_backend)
+        service = SnapshotService(memory=mock_memory, snapshots=mock_backend)
         result = await service.list_snapshots("proj", limit=5)
 
         assert len(result) == 2
@@ -301,7 +301,7 @@ class TestSnapshotServiceMocked:
 
         service = SnapshotService(
             memory=mock_memory,
-            backend=mock_backend,
+            snapshots=mock_backend,
             llm_provider=mock_llm,
         )
 
@@ -318,7 +318,7 @@ class TestSnapshotServiceMocked:
 
         service = SnapshotService(
             memory=mock_memory,
-            backend=mock_backend,
+            snapshots=mock_backend,
             llm_provider=mock_llm,
         )
 
@@ -429,7 +429,7 @@ class TestOnSessionEnd:
         mock_memory.get_recent_experiences = AsyncMock(return_value=[])
         mock_backend = AsyncMock()
 
-        service = SnapshotService(mock_memory, mock_backend)
+        service = SnapshotService(memory=mock_memory, snapshots=mock_backend)
         snapshot = await service.on_session_end("project-alpha")
 
         assert snapshot.task_context == "project-alpha"
@@ -448,7 +448,7 @@ class TestOnSessionEnd:
         mock_backend = AsyncMock()
         mock_backend.query_snapshots_by_context = AsyncMock(return_value=[])
 
-        service = SnapshotService(mock_memory, mock_backend)
+        service = SnapshotService(memory=mock_memory, snapshots=mock_backend)
 
         # Session A: create snapshot
         snap_a = await service.on_session_end("task-A")
@@ -485,7 +485,7 @@ class TestOnSessionEnd:
         mock_backend = AsyncMock()
         mock_backend.query_snapshots_by_context = AsyncMock(return_value=[snapshot])
 
-        service = SnapshotService(mock_memory, mock_backend)
+        service = SnapshotService(memory=mock_memory, snapshots=mock_backend)
 
         start = time.monotonic()
         result = await service.get_latest_snapshot("perf-test")

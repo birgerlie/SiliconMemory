@@ -1080,26 +1080,15 @@ class HypothesisGenerator:
         max_hops: int = 2,
         max_nodes: int = 120,
     ) -> list[str]:
-        """Expand a community outward via graph neighborhood discovery."""
-        db = self._memory._backend._db
+        """Expand a community outward via graph neighborhood discovery.
+
+        Prefers entity_neighbors() (typed edges with target_entity field)
+        when available. Falls back to db.neighbors() with manual key-guessing.
+        """
+        storage = self._memory._storage
         seen: set[str] = {x for x in seed_external_ids if x}
         frontier: set[str] = set(seen)
-
-        def _neighbor_id(node: dict[str, Any], current: str) -> str:
-            keys = (
-                "external_id",
-                "id",
-                "to_id",
-                "from_id",
-                "target",
-                "source",
-                "neighbor_id",
-            )
-            for key in keys:
-                value = node.get(key)
-                if isinstance(value, str) and value and value != current:
-                    return value
-            return ""
+        use_native = True  # Will flip to False if entity_neighbors fails
 
         for _ in range(max_hops):
             if not frontier or len(seen) >= max_nodes:
@@ -1107,16 +1096,60 @@ class HypothesisGenerator:
             nxt: set[str] = set()
             for current in list(frontier):
                 for direction in ("outgoing", "incoming"):
-                    neighbors = await self._run_db_call(
-                        f"neighbors:{direction}",
-                        lambda node=current, dir_name=direction: db.neighbors(node, direction=dir_name) or [],
-                        [],
-                        warn=False,
-                    )
+                    neighbors: list[Any] = []
+
+                    if use_native:
+                        try:
+                            neighbors = await self._run_db_call(
+                                f"entity_neighbors:{direction}",
+                                lambda node=current, dir_name=direction: (
+                                    storage._db.entity_neighbors(
+                                        name=node, direction=dir_name,
+                                    )
+                                ),
+                                None,
+                                warn=False,
+                            )
+                            if neighbors is None:
+                                use_native = False
+                                neighbors = []
+                        except Exception:
+                            use_native = False
+                            neighbors = []
+
+                    if not use_native:
+                        # Fallback: db.neighbors() with manual key extraction
+                        neighbors = await self._run_db_call(
+                            f"neighbors:{direction}",
+                            lambda node=current, dir_name=direction: (
+                                storage._db.neighbors(node, direction=dir_name) or []
+                            ),
+                            [],
+                            warn=False,
+                        )
+
                     for node in neighbors:
-                        if not isinstance(node, dict):
-                            continue
-                        nid = _neighbor_id(node, current)
+                        # Extract neighbor ID: native API uses typed fields,
+                        # fallback uses dict key-guessing
+                        nid = ""
+                        if use_native:
+                            nid = (
+                                getattr(node, "target_entity", "")
+                                or (node.get("target_entity", "") if isinstance(node, dict) else "")
+                                or getattr(node, "external_id", "")
+                                or (node.get("external_id", "") if isinstance(node, dict) else "")
+                            )
+                        else:
+                            if isinstance(node, dict):
+                                for key in (
+                                    "external_id", "id", "to_id", "from_id",
+                                    "target", "source", "neighbor_id",
+                                ):
+                                    value = node.get(key)
+                                    if isinstance(value, str) and value and value != current:
+                                        nid = value
+                                        break
+
                         if not nid or nid in seen:
                             continue
                         seen.add(nid)

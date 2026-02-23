@@ -2,43 +2,34 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
-from silicon_memory.core.utils import utc_now
+if TYPE_CHECKING:
+    from silicon_memory.storage.silicondb_backend import SiliconDBBackend
+
+from silicon_memory.core.decision import Decision
 from silicon_memory.core.types import (
     Belief,
+    BeliefStatus,
     Experience,
     KnowledgeProof,
     Procedure,
     RecallResult,
     SourceType,
 )
+from silicon_memory.core.utils import utc_now
 from silicon_memory.ingestion.types import IngestionAdapter, IngestionResult
 from silicon_memory.retrieval.salience import PROFILES, SalienceProfile
-from silicon_memory.core.decision import Decision, DecisionStatus
-from silicon_memory.snapshot.types import ContextSnapshot, SnapshotConfig
-from silicon_memory.snapshot.service import SnapshotService
-from silicon_memory.storage.silicondb_backend import SiliconDBBackend, SiliconDBConfig
-from silicon_memory.temporal.decay import DecayConfig
-from silicon_memory.security.types import (
-    PrivacyLevel,
-    PrivacyMetadata,
-    UserContext,
-)
+from silicon_memory.security.audit import AuditAction, AuditLogger
 from silicon_memory.security.config import SecurityConfig
-from silicon_memory.security.preferences import MemoryPreferences
 from silicon_memory.security.forgetting import (
     ForgetResult,
     ForgettingService,
-)
-from silicon_memory.security.transparency import (
-    AccessLogEntry,
-    ProvenanceChain,
-    TransparencyService,
 )
 from silicon_memory.security.inspector import (
     CorrectionResult,
@@ -46,7 +37,34 @@ from silicon_memory.security.inspector import (
     MemoryInspector,
     MemoryRecord,
 )
-from silicon_memory.security.audit import AuditAction, AuditLogger
+from silicon_memory.security.preferences import MemoryPreferences
+from silicon_memory.security.transparency import (
+    AccessLogEntry,
+    ProvenanceChain,
+    TransparencyService,
+)
+from silicon_memory.security.types import (
+    PrivacyLevel,
+    PrivacyMetadata,
+    UserContext,
+)
+from silicon_memory.snapshot.service import SnapshotService
+from silicon_memory.snapshot.types import ContextSnapshot, SnapshotConfig
+from silicon_memory.storage import (
+    BeliefStore,
+    DecisionStore,
+    ExperienceStore,
+    KnowledgeQuery,
+    ObservabilityStore,
+    ProcedureStore,
+    RaptorStore,
+    ReflectionTracker,
+    SnapshotStore,
+    StorageLayer,
+    WorkingStore,
+)
+from silicon_memory.storage.config import SiliconDBConfig
+from silicon_memory.temporal.decay import DecayConfig
 
 
 @dataclass
@@ -216,26 +234,46 @@ class SiliconMemory:
             auto_embedder=auto_embedder,
             embedder_model=embedder_model,
         )
-        self._backend = SiliconDBBackend(config, user_context, decay_config)
+
+        # Core storage layer + domain stores (bypass SiliconDBBackend facade)
+        self._storage = StorageLayer(config, user_context, decay_config)
+        self._beliefs = BeliefStore(self._storage)
+        self._experiences = ExperienceStore(self._storage)
+        self._procedures = ProcedureStore(self._storage)
+        self._working = WorkingStore(self._storage)
+        self._decisions = DecisionStore(self._storage)
+        self._raptor = RaptorStore(self._storage)
+        self._observability = ObservabilityStore(self._storage)
+        self._snapshots = SnapshotStore(self._storage)
+        self._reflection_tracker = ReflectionTracker(
+            self._storage, self._beliefs
+        )
+        self._knowledge = KnowledgeQuery(
+            self._storage,
+            self._beliefs,
+            self._experiences,
+            self._procedures,
+            self._working,
+        )
 
         # Initialize security services
-        self._forgetting_service = ForgettingService(self._backend)
-        self._inspector = MemoryInspector(self._backend)
+        self._forgetting_service = ForgettingService(self._storage)
+        self._inspector = MemoryInspector(self._storage)
         self._audit_logger = AuditLogger(
-            self._backend,
+            self._storage,
             retention_days=self._security_config.audit_retention_days,
             log_reads=self._security_config.audit_read_operations,
             max_entries=self._security_config.max_audit_entries,
         )
         self._transparency_service = TransparencyService(
-            self._backend,
+            self._storage,
             max_access_log_entries=self._security_config.max_access_log_entries,
         )
 
         # Initialize snapshot service
         self._snapshot_service = SnapshotService(
             memory=self,
-            backend=self._backend,
+            snapshots=self._snapshots,
             config=snapshot_config,
             llm_provider=llm_provider,
         )
@@ -248,17 +286,43 @@ class SiliconMemory:
         """Get the current user context."""
         return self._user_context
 
+    @property
+    def _backend(self) -> SiliconDBBackend:
+        """Backwards-compat: creates facade on first access."""
+        if not hasattr(self, "_SiliconMemory__backend_facade"):
+            from silicon_memory.storage.silicondb_backend import SiliconDBBackend as _Facade
+
+            # Create facade sharing our StorageLayer
+            facade = object.__new__(_Facade)
+            facade._storage = self._storage
+            facade._config = self._storage.config
+            facade._user_context = self._storage.user_context
+            facade._db = self._storage._db
+            # Wire up stores
+            facade._belief_store = self._beliefs
+            facade._experience_store = self._experiences
+            facade._procedure_store = self._procedures
+            facade._working_store = self._working
+            facade._decision_store = self._decisions
+            facade._raptor_store = self._raptor
+            facade._observability_store = self._observability
+            facade._snapshot_store = self._snapshots
+            facade._reflection_tracker = self._reflection_tracker
+            facade._knowledge_query = self._knowledge
+            self.__backend_facade = facade
+        return self.__backend_facade
+
     def close(self) -> None:
         """Close the memory system."""
-        self._backend.close()
+        self._storage.close()
 
-    def __enter__(self) -> "SiliconMemory":
+    def __enter__(self) -> SiliconMemory:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.close()
 
-    async def __aenter__(self) -> "SiliconMemory":
+    async def __aenter__(self) -> SiliconMemory:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -306,7 +370,7 @@ class SiliconMemory:
         if search_weights is not None:
             recall_kwargs["search_weights"] = search_weights
 
-        result = await self._backend.recall(**recall_kwargs)
+        result = await self._knowledge.recall(**recall_kwargs)
 
         if ctx.source_type:
             mode = ctx.source_type.lower()
@@ -347,13 +411,13 @@ class SiliconMemory:
         seeds: list[str] = []
 
         # Use current_topic from working memory if available
-        current_topic = await self._backend.get_working("current_topic")
+        current_topic = await self._working.get_working("current_topic")
         search_query = f"{query} {current_topic}" if current_topic else query
 
         # Find a handful of matching belief nodes to use as seeds
-        beliefs = await self._backend.query_beliefs(search_query, limit=5)
+        beliefs = await self._beliefs.query_beliefs(search_query, limit=5)
         for b in beliefs:
-            ext_id = self._backend._build_external_id("belief", b.id)
+            ext_id = self._storage.build_external_id("belief", b.id)
             seeds.append(ext_id)
 
         return seeds
@@ -364,7 +428,7 @@ class SiliconMemory:
         max_levels: int = 5,
     ) -> dict:
         """Build a RAPTOR hierarchical tree over the document store."""
-        return await self._backend.build_raptor_tree(cluster_size, max_levels)
+        return await self._raptor.build_raptor_tree(cluster_size, max_levels)
 
     async def search_raptor(
         self,
@@ -373,7 +437,7 @@ class SiliconMemory:
         tree_boost: float = 0.3,
     ) -> list[RecallResult]:
         """Search using RAPTOR hierarchical retrieval."""
-        return await self._backend.search_raptor_hybrid(query, k, tree_boost)
+        return await self._raptor.search_raptor_hybrid(query, k, tree_boost)
 
     async def what_do_you_know(
         self,
@@ -389,17 +453,17 @@ class SiliconMemory:
         Returns:
             KnowledgeProof with beliefs, sources, and contradictions
         """
-        return await self._backend.build_knowledge_proof(query, min_confidence)
+        return await self._knowledge.build_knowledge_proof(query, min_confidence)
 
     # ========== Semantic Memory (Beliefs) ==========
 
     async def commit_belief(self, belief: Belief) -> None:
         """Commit a belief to semantic memory."""
-        await self._backend.commit_belief(belief)
+        await self._beliefs.commit_belief(belief)
 
     async def get_belief(self, belief_id: UUID) -> Belief | None:
         """Get a belief by ID."""
-        return await self._backend.get_belief(belief_id)
+        return await self._beliefs.get_belief(belief_id)
 
     async def query_beliefs(
         self,
@@ -408,34 +472,34 @@ class SiliconMemory:
         min_confidence: float = 0.0,
     ) -> list[Belief]:
         """Query beliefs by semantic similarity."""
-        return await self._backend.query_beliefs(query, limit, min_confidence)
+        return await self._beliefs.query_beliefs(query, limit, min_confidence)
 
     async def find_contradictions(self, belief: Belief) -> list[Belief]:
         """Find beliefs that contradict the given belief."""
-        return await self._backend.find_contradictions(belief)
+        return await self._beliefs.find_contradictions(belief)
 
     async def get_beliefs_from_experience(self, experience_id: UUID) -> list[Belief]:
         """Get beliefs extracted from a specific experience."""
-        return await self._backend.get_beliefs_from_experience(experience_id)
+        return await self._reflection_tracker.get_beliefs_from_experience(experience_id)
 
     async def update_belief_status(
         self,
         belief_id: UUID,
-        new_status: "BeliefStatus",
+        new_status: BeliefStatus,
         reason: str = "",
     ) -> bool:
         """Update a belief lifecycle status."""
-        return await self._backend.update_belief_status(belief_id, new_status, reason)
+        return await self._beliefs.update_belief_status(belief_id, new_status, reason)
 
     # ========== Episodic Memory (Experiences) ==========
 
     async def record_experience(self, experience: Experience) -> None:
         """Record an experience to episodic memory."""
-        await self._backend.record_experience(experience)
+        await self._experiences.record_experience(experience)
 
     async def get_experience(self, experience_id: UUID) -> Experience | None:
         """Get an experience by ID."""
-        return await self._backend.get_experience(experience_id)
+        return await self._experiences.get_experience(experience_id)
 
     async def get_recent_experiences(
         self,
@@ -443,23 +507,23 @@ class SiliconMemory:
         limit: int = 100,
     ) -> list[Experience]:
         """Get recent experiences."""
-        return await self._backend.get_recent_experiences(hours, limit)
+        return await self._experiences.get_recent_experiences(hours, limit)
 
     async def mark_experiences_processed(self, experience_ids: list[UUID]) -> None:
         """Mark experiences as processed by reflection."""
-        await self._backend.mark_experiences_processed(experience_ids)
+        await self._experiences.mark_experiences_processed(experience_ids)
 
     async def get_unextracted_experiences(self, limit: int = 10000) -> list[Experience]:
         """Get experiences not yet processed by extraction."""
-        return await self._backend.get_unextracted_experiences(limit)
+        return await self._experiences.get_unextracted_experiences(limit)
 
     async def mark_experiences_extracted(self, experience_ids: list[UUID]) -> None:
         """Mark experiences as extracted."""
-        await self._backend.mark_experiences_extracted(experience_ids)
+        await self._experiences.mark_experiences_extracted(experience_ids)
 
     async def count_extraction_progress(self) -> dict[str, int]:
         """Count extracted vs unextracted experiences."""
-        return await self._backend.count_extraction_progress()
+        return await self._experiences.count_extraction_progress()
 
     async def wait_for_ingest_visibility(
         self,
@@ -476,7 +540,7 @@ class SiliconMemory:
                 continue
         if not parsed:
             return True
-        return await self._backend.wait_for_experience_visibility(
+        return await self._experiences.wait_for_experience_visibility(
             parsed,
             timeout_s=timeout_s,
             poll_interval_s=poll_interval_s,
@@ -549,11 +613,11 @@ class SiliconMemory:
 
     async def commit_procedure(self, procedure: Procedure) -> None:
         """Commit a procedure to procedural memory."""
-        await self._backend.commit_procedure(procedure)
+        await self._procedures.commit_procedure(procedure)
 
     async def get_procedure(self, procedure_id: UUID) -> Procedure | None:
         """Get a procedure by ID."""
-        return await self._backend.get_procedure(procedure_id)
+        return await self._procedures.get_procedure(procedure_id)
 
     async def find_applicable_procedures(
         self,
@@ -561,7 +625,7 @@ class SiliconMemory:
         limit: int = 5,
     ) -> list[Procedure]:
         """Find procedures applicable to the context."""
-        return await self._backend.find_applicable_procedures(context, limit)
+        return await self._procedures.find_applicable_procedures(context, limit)
 
     async def record_procedure_outcome(
         self,
@@ -569,29 +633,29 @@ class SiliconMemory:
         success: bool,
     ) -> bool:
         """Record an outcome for a procedure."""
-        return await self._backend.record_procedure_outcome(procedure_id, success)
+        return await self._procedures.record_procedure_outcome(procedure_id, success)
 
     # ========== Working Memory ==========
 
     async def set_context(self, key: str, value: Any, ttl_seconds: int = 300) -> None:
         """Set a value in working memory."""
-        await self._backend.set_working(key, value, ttl_seconds)
+        await self._working.set_working(key, value, ttl_seconds)
 
     async def get_context(self, key: str) -> Any | None:
         """Get a value from working memory."""
-        return await self._backend.get_working(key)
+        return await self._working.get_working(key)
 
     async def delete_context(self, key: str) -> bool:
         """Delete a value from working memory."""
-        return await self._backend.delete_working(key)
+        return await self._working.delete_working(key)
 
     async def get_all_context(self) -> dict[str, Any]:
         """Get all working memory context."""
-        return await self._backend.get_all_working()
+        return await self._working.get_all_working()
 
     async def cleanup_expired(self) -> int:
         """Clean up expired working memory entries."""
-        return await self._backend.cleanup_expired_working()
+        return await self._working.cleanup_expired_working()
 
     # ========== Decision Records ==========
 
@@ -611,11 +675,11 @@ class SiliconMemory:
         snapshot_id = None
         if decision.assumptions:
             belief_ids = [str(a.belief_id) for a in decision.assumptions]
-            snapshot = await self._backend.snapshot_beliefs(belief_ids)
+            snapshot = await self._snapshots.snapshot_beliefs(belief_ids)
             snapshot_id = snapshot.get("snapshot_id")
             decision.belief_snapshot_id = snapshot_id
 
-        await self._backend.commit_decision(decision)
+        await self._decisions.commit_decision(decision)
         return snapshot_id
 
     async def recall_decisions(
@@ -634,7 +698,7 @@ class SiliconMemory:
         Returns:
             List of matching decisions
         """
-        return await self._backend.recall_decisions(query, k, min_confidence)
+        return await self._decisions.recall_decisions(query, k, min_confidence)
 
     async def get_decision(self, decision_id: UUID) -> Decision | None:
         """Get a decision by ID with current vs original assumption confidences.
@@ -645,7 +709,7 @@ class SiliconMemory:
         Returns:
             Decision or None
         """
-        decision = await self._backend.get_decision(decision_id)
+        decision = await self._decisions.get_decision(decision_id)
         if not decision:
             return None
 
@@ -653,7 +717,7 @@ class SiliconMemory:
         for assumption in decision.assumptions:
             current_confidence: float | None = None
             try:
-                belief = await self._backend.get_belief(assumption.belief_id)
+                belief = await self._beliefs.get_belief(assumption.belief_id)
                 if belief is not None:
                     current_confidence = belief.confidence
             except Exception:
@@ -703,7 +767,7 @@ class SiliconMemory:
         Returns:
             True if successful
         """
-        return await self._backend.record_decision_outcome(decision_id, outcome)
+        return await self._decisions.record_decision_outcome(decision_id, outcome)
 
     async def revise_decision(
         self,
@@ -719,7 +783,7 @@ class SiliconMemory:
         Returns:
             The new Decision, or None if original not found
         """
-        return await self._backend.revise_decision(decision_id, new_decision)
+        return await self._decisions.revise_decision(decision_id, new_decision)
 
     async def generate_decision_brief(
         self,
@@ -809,7 +873,7 @@ class SiliconMemory:
         """
         from silicon_memory.core.types import SourceType
 
-        all_beliefs = await self._backend.query_beliefs(
+        all_beliefs = await self._beliefs.query_beliefs(
             query, limit=limit * 2, min_confidence=min_confidence
         )
 
@@ -1289,7 +1353,7 @@ class SiliconMemory:
             if "/" not in entity_id:
                 entity_id = f"{self._user_context.tenant_id}/{self._user_context.user_id}/{entity_id}"
 
-            doc = self._backend._db.get(entity_id)
+            doc = self._storage._db.get(entity_id)
             if not doc:
                 return False
 
@@ -1300,7 +1364,7 @@ class SiliconMemory:
                     return False
 
             metadata["privacy_level"] = privacy_level.value
-            self._backend._db.update(entity_id, metadata=metadata)
+            self._storage._db.update(entity_id, metadata=metadata)
             return True
         except Exception:
             return False
@@ -1321,7 +1385,7 @@ class SiliconMemory:
             if "/" not in entity_id:
                 entity_id = f"{self._user_context.tenant_id}/{self._user_context.user_id}/{entity_id}"
 
-            doc = self._backend._db.get(entity_id)
+            doc = self._storage._db.get(entity_id)
             if not doc:
                 return None
 
@@ -1350,7 +1414,7 @@ class SiliconMemory:
             if "/" not in entity_id:
                 entity_id = f"{self._user_context.tenant_id}/{self._user_context.user_id}/{entity_id}"
 
-            doc = self._backend._db.get(entity_id)
+            doc = self._storage._db.get(entity_id)
             if not doc:
                 return False
 
@@ -1364,7 +1428,7 @@ class SiliconMemory:
             if user_id not in shared_with:
                 shared_with.append(user_id)
                 metadata["shared_with"] = shared_with
-                self._backend._db.update(entity_id, metadata=metadata)
+                self._storage._db.update(entity_id, metadata=metadata)
 
             return True
         except Exception:
@@ -1388,7 +1452,7 @@ class SiliconMemory:
             if "/" not in entity_id:
                 entity_id = f"{self._user_context.tenant_id}/{self._user_context.user_id}/{entity_id}"
 
-            doc = self._backend._db.get(entity_id)
+            doc = self._storage._db.get(entity_id)
             if not doc:
                 return False
 
@@ -1402,7 +1466,7 @@ class SiliconMemory:
             if user_id in shared_with:
                 shared_with.remove(user_id)
                 metadata["shared_with"] = shared_with
-                self._backend._db.update(entity_id, metadata=metadata)
+                self._storage._db.update(entity_id, metadata=metadata)
 
             return True
         except Exception:
@@ -1428,7 +1492,7 @@ class SiliconMemory:
             if "/" not in entity_id:
                 entity_id = f"{self._user_context.tenant_id}/{self._user_context.user_id}/{entity_id}"
 
-            doc = self._backend._db.get(entity_id)
+            doc = self._storage._db.get(entity_id)
             if not doc:
                 return False
 
@@ -1436,7 +1500,7 @@ class SiliconMemory:
             consents = metadata.get("consents", {})
             consents[consent_type] = utc_now().isoformat()
             metadata["consents"] = consents
-            self._backend._db.update(entity_id, metadata=metadata)
+            self._storage._db.update(entity_id, metadata=metadata)
             return True
         except Exception:
             return False
@@ -1459,7 +1523,7 @@ class SiliconMemory:
             if "/" not in entity_id:
                 entity_id = f"{self._user_context.tenant_id}/{self._user_context.user_id}/{entity_id}"
 
-            doc = self._backend._db.get(entity_id)
+            doc = self._storage._db.get(entity_id)
             if not doc:
                 return False
 
@@ -1468,7 +1532,7 @@ class SiliconMemory:
             if consent_type in consents:
                 del consents[consent_type]
                 metadata["consents"] = consents
-                self._backend._db.update(entity_id, metadata=metadata)
+                self._storage._db.update(entity_id, metadata=metadata)
 
             return True
         except Exception:
@@ -1492,7 +1556,7 @@ class SiliconMemory:
             if "/" not in entity_id:
                 entity_id = f"{self._user_context.tenant_id}/{self._user_context.user_id}/{entity_id}"
 
-            doc = self._backend._db.get(entity_id)
+            doc = self._storage._db.get(entity_id)
             if not doc:
                 return False
 

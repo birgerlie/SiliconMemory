@@ -497,13 +497,13 @@ def silicon_memory(temp_db_path: Path, mock_embedder: MockEmbedder):
         async def create_snapshot(self, task_context, llm_provider=None):
             from silicon_memory.snapshot.service import SnapshotService
             service = SnapshotService(
-                memory=self, backend=self._backend, llm_provider=llm_provider,
+                memory=self, snapshots=self._backend, llm_provider=llm_provider,
             )
             return await service.create_snapshot(task_context, llm_provider)
 
         async def get_latest_snapshot(self, task_context):
             from silicon_memory.snapshot.service import SnapshotService
-            service = SnapshotService(memory=self, backend=self._backend)
+            service = SnapshotService(memory=self, snapshots=self._backend)
             return await service.get_latest_snapshot(task_context)
 
         def close(self):

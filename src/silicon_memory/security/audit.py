@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from collections import deque
 from enum import Enum
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from silicon_memory.core.utils import utc_now
 from silicon_memory.security.types import UserContext
 
 if TYPE_CHECKING:
-    from silicon_memory.storage.silicondb_backend import SiliconDBBackend
+    from silicon_memory.storage.engine import StorageLayer
 
 
 class AuditAction(Enum):
@@ -115,7 +115,7 @@ class AuditEntry:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "AuditEntry":
+    def from_dict(cls, data: dict[str, Any]) -> AuditEntry:
         """Create from dictionary."""
         return cls(
             id=data.get("id", str(uuid4())),
@@ -155,7 +155,7 @@ class AuditLogger:
     and forensic analysis.
 
     Example:
-        >>> logger = AuditLogger(backend)
+        >>> logger = AuditLogger(storage)
         >>>
         >>> # Log an operation
         >>> await logger.log(
@@ -175,12 +175,12 @@ class AuditLogger:
 
     def __init__(
         self,
-        backend: "SiliconDBBackend | None" = None,
+        storage: StorageLayer | None = None,
         retention_days: int = 90,
         log_reads: bool = False,
         max_entries: int = 10_000,
     ) -> None:
-        self._backend = backend
+        self._storage = storage
         self._retention_days = retention_days
         self._log_reads = log_reads
         self._entries: deque[AuditEntry] = deque(maxlen=max_entries)
@@ -245,7 +245,7 @@ class AuditLogger:
         self._entries.append(entry)
 
         # Store in backend if available
-        if self._backend:
+        if self._storage:
             await self._persist_entry(entry)
 
         return entry
@@ -524,11 +524,14 @@ class AuditLogger:
         Uses native event replay when the backend supports it,
         falling back to in-memory entries otherwise.
         """
-        if self._backend:
+        if self._storage:
             try:
-                events = await self._backend.replay_mutations(
-                    from_time=from_time,
-                    limit=limit,
+                events = await self._storage.run_db(
+                    "replay_events",
+                    lambda: self._storage.replay_events_sync(
+                        from_time=from_time,
+                        limit=limit,
+                    ),
                 )
                 if events:
                     return events
@@ -550,12 +553,12 @@ class AuditLogger:
 
     async def _persist_entry(self, entry: AuditEntry) -> None:
         """Persist an audit entry to the backend."""
-        if not self._backend:
+        if not self._storage:
             return
 
         try:
             external_id = f"audit/{entry.tenant_id}/{entry.id}"
-            self._backend._db.ingest(
+            await self._storage.ingest(
                 external_id=external_id,
                 text=entry.as_log_line(),
                 metadata=entry.to_dict(),

@@ -27,6 +27,7 @@ class SalienceProfile:
         graph_proximity_weight: Weight for graph distance to context
         entropy_weight: Weight for belief entropy/uncertainty
         entropy_direction: "prefer_low" for certain facts, "prefer_high" for exploration
+        rerank_strategy: Optional reranking strategy — "graph", "mmr", or "crossEncoder"
     """
 
     vector_weight: float = 0.3
@@ -38,12 +39,19 @@ class SalienceProfile:
     entropy_weight: float = 0.1
     entropy_direction: str = "prefer_low"
     tree_boost: float = 0.0  # RAPTOR hierarchical retrieval boost
+    rerank_strategy: str | None = None  # "graph", "mmr", "crossEncoder"
 
     def __post_init__(self) -> None:
         if self.entropy_direction not in ("prefer_low", "prefer_high"):
             raise ValueError(
                 f"entropy_direction must be 'prefer_low' or 'prefer_high', "
                 f"got '{self.entropy_direction}'"
+            )
+        valid_rerank = (None, "graph", "mmr", "crossEncoder")
+        if self.rerank_strategy not in valid_rerank:
+            raise ValueError(
+                f"rerank_strategy must be one of {valid_rerank}, "
+                f"got '{self.rerank_strategy}'"
             )
 
     def to_search_weights(self) -> dict[str, Any]:
@@ -65,6 +73,8 @@ class SalienceProfile:
         }
         if self.tree_boost > 0:
             weights["tree_boost"] = self.tree_boost
+        if self.rerank_strategy:
+            weights["rerank_strategy"] = self.rerank_strategy
         return weights
 
     @property
@@ -123,5 +133,27 @@ PROFILES: dict[str, SalienceProfile] = {
         entropy_weight=0.05,
         entropy_direction="prefer_low",
         tree_boost=0.2,
+    ),
+    "architecture": SalienceProfile(
+        vector_weight=0.3,
+        text_weight=0.1,
+        temporal_weight=0.1,
+        temporal_half_life_days=60,
+        confidence_weight=0.2,
+        graph_proximity_weight=0.2,
+        entropy_weight=0.1,
+        entropy_direction="prefer_low",
+        rerank_strategy="graph",
+    ),
+    "debugging": SalienceProfile(
+        vector_weight=0.35,
+        text_weight=0.15,
+        temporal_weight=0.2,
+        temporal_half_life_days=14,
+        confidence_weight=0.1,
+        graph_proximity_weight=0.1,
+        entropy_weight=0.1,
+        entropy_direction="prefer_high",
+        rerank_strategy="mmr",
     ),
 }

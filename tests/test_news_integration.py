@@ -337,7 +337,7 @@ class TestCrossReference:
         )
 
         memory = MagicMock(spec=SiliconMemory)
-        memory._backend = mock_backend
+        memory._beliefs = mock_backend
         memory._user_context = MagicMock(user_id="u1", tenant_id="t1")
 
         import types
@@ -375,7 +375,7 @@ class TestCrossReference:
         )
 
         memory = MagicMock(spec=SiliconMemory)
-        memory._backend = mock_backend
+        memory._beliefs = mock_backend
         memory._user_context = MagicMock(user_id="u1", tenant_id="t1")
 
         import types
@@ -409,7 +409,7 @@ class TestCrossReference:
         )
 
         memory = MagicMock(spec=SiliconMemory)
-        memory._backend = mock_backend
+        memory._beliefs = mock_backend
         memory._user_context = MagicMock(user_id="u1", tenant_id="t1")
 
         import types
@@ -428,7 +428,7 @@ class TestCrossReference:
         mock_backend.query_beliefs = AsyncMock(return_value=[])
 
         memory = MagicMock(spec=SiliconMemory)
-        memory._backend = mock_backend
+        memory._beliefs = mock_backend
         memory._user_context = MagicMock(user_id="u1", tenant_id="t1")
 
         import types

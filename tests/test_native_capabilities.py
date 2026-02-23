@@ -160,6 +160,11 @@ class TestEvidenceLinks:
     async def test_commit_belief_passes_evidence_kwargs(self):
         backend = _make_backend()
         belief = _make_belief(source_experiences=["exp-001"])
+        # Use OBSERVATION source so claim validation doesn't reclassify as document
+        belief.source = Source(
+            id="user_input", type=SourceType.OBSERVATION, reliability=0.9,
+            metadata={"experiences": ["exp-001"]},
+        )
 
         # Track what insert_triple was called with
         captured_kwargs: dict[str, Any] = {}
@@ -172,18 +177,18 @@ class TestEvidenceLinks:
         backend._db.get = MagicMock(return_value=None)
         backend._db.wait_for = MagicMock()
         backend._db.ingest = MagicMock(return_value=MagicMock(sequence=1))
-        # Make _run_db call the lambda directly (skip threading)
+        backend._db.query_triples = MagicMock(return_value=[])
+        backend._db.search_paginated = MagicMock(return_value=[])
+        # Make run_db call the lambda directly (skip threading)
         async def direct_run_db(op_name, fn, *, timeout_s=None, retry=True):
             return fn()
-        backend._run_db = direct_run_db
-        # Skip complex claim logic
-        backend._looks_reflection_generated = MagicMock(return_value=False)
+        backend._storage.run_db = direct_run_db
 
         await backend.commit_belief(belief)
 
         assert "evidence_refs" in captured_kwargs
         assert captured_kwargs["link_confidence"] == belief.confidence
-        assert captured_kwargs["link_source"] == "reflection_engine"
+        assert captured_kwargs["link_source"] == "user_input"
 
     @pytest.mark.asyncio
     async def test_commit_belief_skips_evidence_when_disabled(self):
@@ -201,10 +206,11 @@ class TestEvidenceLinks:
         backend._db.get = MagicMock(return_value=None)
         backend._db.wait_for = MagicMock()
         backend._db.ingest = MagicMock(return_value=MagicMock(sequence=1))
+        backend._db.query_triples = MagicMock(return_value=[])
+        backend._db.search_paginated = MagicMock(return_value=[])
         async def direct_run_db(op_name, fn, *, timeout_s=None, retry=True):
             return fn()
-        backend._run_db = direct_run_db
-        backend._looks_reflection_generated = MagicMock(return_value=False)
+        backend._storage.run_db = direct_run_db
 
         await backend.commit_belief(belief)
 
@@ -227,36 +233,44 @@ class TestSearchDelegation:
         backend._db.get = MagicMock(return_value=None)
         backend._db.wait_for = MagicMock()
         backend._db.ingest = MagicMock(return_value=MagicMock(sequence=1))
+        backend._db.query_triples = MagicMock(return_value=[])
+        backend._db.search_paginated = MagicMock(return_value=[])
         async def direct_run_db(op_name, fn, *, timeout_s=None, retry=True):
             return fn()
-        backend._run_db = direct_run_db
-        backend._looks_reflection_generated = MagicMock(return_value=False)
-        backend._upsert_belief_surface = AsyncMock()
+        backend._storage.run_db = direct_run_db
+        backend._belief_store._upsert_belief_surface = AsyncMock()
 
         await backend.commit_belief(belief)
 
         # Should NOT be called when skip_belief_surface_writes=True
-        backend._upsert_belief_surface.assert_not_called()
+        backend._belief_store._upsert_belief_surface.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_commit_belief_writes_surface_when_flag_off(self):
         cfg = _make_config(skip_belief_surface_writes=False)
         backend = _make_backend(cfg)
         belief = _make_belief()
+        # Use OBSERVATION source so claim validation takes the triple path
+        # (REFLECTION source triggers provenance checks that route to document path)
+        belief.source = Source(
+            id="user_input", type=SourceType.OBSERVATION, reliability=0.9,
+            metadata={},
+        )
 
         backend._db.insert_triple = MagicMock(return_value=MagicMock(sequence=42))
         backend._db.get = MagicMock(return_value=None)
         backend._db.wait_for = MagicMock()
         backend._db.ingest = MagicMock(return_value=MagicMock(sequence=1))
+        backend._db.query_triples = MagicMock(return_value=[])
+        backend._db.search_paginated = MagicMock(return_value=[])
         async def direct_run_db(op_name, fn, *, timeout_s=None, retry=True):
             return fn()
-        backend._run_db = direct_run_db
-        backend._looks_reflection_generated = MagicMock(return_value=False)
-        backend._upsert_belief_surface = AsyncMock()
+        backend._storage.run_db = direct_run_db
+        backend._belief_store._upsert_belief_surface = AsyncMock()
 
         await backend.commit_belief(belief)
 
-        backend._upsert_belief_surface.assert_called_once()
+        backend._belief_store._upsert_belief_surface.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_recall_skips_python_decay_when_native(self):
@@ -272,10 +286,21 @@ class TestSearchDelegation:
         ]
         beliefs[0][0].temporal = TemporalContext(observed_at=now)
 
-        backend._query_beliefs_with_entropy = AsyncMock(return_value=beliefs)
-        backend.query_experiences = AsyncMock(return_value=[])
-        backend.find_applicable_procedures = AsyncMock(return_value=[])
-        backend.get_all_working = AsyncMock(return_value={})
+        # Patch the stores on KnowledgeQuery, not the backend facade,
+        # because backend.recall() delegates to self._knowledge_query.recall()
+        # which calls stores directly.
+        backend._knowledge_query._beliefs.query_beliefs_with_entropy = AsyncMock(
+            return_value=beliefs
+        )
+        backend._knowledge_query._experiences.query_experiences = AsyncMock(
+            return_value=[]
+        )
+        backend._knowledge_query._procedures.find_applicable_procedures = AsyncMock(
+            return_value=[]
+        )
+        backend._knowledge_query._working.get_all_working = AsyncMock(
+            return_value={}
+        )
 
         result = await backend.recall("test query")
 
@@ -397,18 +422,33 @@ class TestConsistencyWaits:
             doc.node_type = "working"
 
         backend._db.scan = MagicMock(return_value=mock_docs)
+        # Bypass threading in run_db so the scan call executes synchronously
+        async def direct_run_db(op_name, fn, *, timeout_s=None, retry=True):
+            return fn()
+        backend._storage.run_db = direct_run_db
 
         result = await backend.get_all_working()
 
-        backend._db.scan.assert_called_once_with(node_type="working")
+        # StorageLayer.scan() passes limit and offset kwargs
+        backend._db.scan.assert_called_once_with(
+            node_type="working", limit=1000, offset=0,
+        )
 
     @pytest.mark.asyncio
     async def test_set_working_calls_wait_for(self):
         backend = _make_backend()
 
+        # WorkingStore.set_working() tries update first, falls back to ingest.
+        # StorageLayer.ingest() calls wait_for after ingest when consistency
+        # waits are enabled.  Make update raise so the ingest path is taken.
         result_mock = MagicMock(sequence=99)
-        backend._db.update = MagicMock(return_value=result_mock)
+        backend._db.update = MagicMock(side_effect=Exception("not found"))
+        backend._db.ingest = MagicMock(return_value=result_mock)
         backend._db.wait_for = MagicMock()
+        # Bypass threading in run_db
+        async def direct_run_db(op_name, fn, *, timeout_s=None, retry=True):
+            return fn()
+        backend._storage.run_db = direct_run_db
 
         await backend.set_working("key1", "value1")
 
@@ -492,12 +532,15 @@ class TestRaptorRetrieval:
             "levels": 3,
             "clusters": 15,
         })
+        # Bypass threading in run_db
+        async def direct_run_db(op_name, fn, *, timeout_s=None, retry=True):
+            return fn()
+        backend._storage.run_db = direct_run_db
 
         result = await backend.build_raptor_tree(cluster_size=10, max_levels=5)
         assert result["status"] == "built"
-        backend._db.build_raptor_tree.assert_called_once_with(
-            cluster_size=10, max_levels=5,
-        )
+        # StorageLayer.build_raptor_tree passes args positionally
+        backend._db.build_raptor_tree.assert_called_once_with(10, 5)
 
     @pytest.mark.asyncio
     async def test_search_raptor_hybrid(self):
@@ -649,7 +692,15 @@ class TestFeatureFlagCompat:
         mock_result.node_type = "experience"
         mock_result.metadata = {}
 
-        backend._search_experiences_broad = MagicMock(return_value=[mock_result])
+        # Patch on the experience store (not backend facade) because
+        # wait_for_experience_visibility delegates to ExperienceStore
+        backend._experience_store._search_experiences_broad = MagicMock(
+            return_value=[mock_result],
+        )
+        # Bypass threading in run_db to avoid event loop hang
+        async def direct_run_db(op_name, fn, *, timeout_s=None, retry=True):
+            return fn()
+        backend._storage.run_db = direct_run_db
 
         result = await backend.wait_for_experience_visibility(
             [exp_id], timeout_s=0.1, poll_interval_s=0.01,

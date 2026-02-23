@@ -164,7 +164,7 @@ async def client(server_config: ServerConfig, _mock_embedder):
                 memory._inspector = MemoryInspector(backend)
                 memory._audit_logger = AuditLogger(backend)
                 memory._snapshot_service = SnapshotService(
-                    memory=memory, backend=backend, llm_provider=app.state.llm,
+                    memory=memory, snapshots=backend, llm_provider=app.state.llm,
                 )
                 memory._preferences = None
 

@@ -114,7 +114,6 @@ class MemoryConsolidator:
         4. Build cross-modal links
         """
         stats = ConsolidationStats()
-        db = self._memory._backend._db
 
         # Step 1: Compute importance scores
         importance = await self._compute_importance()
@@ -145,9 +144,9 @@ class MemoryConsolidator:
 
     async def _compute_importance(self) -> dict[str, float]:
         """Compute entity importance via PageRank, truncated to top-N."""
-        db = self._memory._backend._db
+        storage = self._memory._storage
         try:
-            pr_results = db.pagerank(k=self._max_nodes if self._max_nodes else 10000)
+            pr_results = await storage.pagerank(k=self._max_nodes if self._max_nodes else 10000)
             if isinstance(pr_results, list):
                 scores = {
                     n.get("external_id", n.get("id", "")): n.get("score", 0.0)
@@ -174,26 +173,47 @@ class MemoryConsolidator:
         Beliefs about entities with low PageRank score get a small
         negative confidence adjustment. This models forgetting of
         unimportant details over time.
+
+        Uses batch update_and_apply_probabilities() when available,
+        falling back to sequential record_observation() calls.
         """
         if not importance:
             return 0
 
-        backend = self._memory._backend
-        decay_count = 0
-
         # Find beliefs with low importance
         median_score = sorted(importance.values())[len(importance) // 2] if importance else 0
 
+        decay_ids: list[str] = []
         for ext_id, score in importance.items():
             if score >= median_score:
                 continue
-            # Only decay beliefs (not experiences or procedures)
             if "/belief-" not in ext_id:
                 continue
+            decay_ids.append(ext_id)
+            if len(decay_ids) >= 100:  # Cap per cycle
+                break
 
+        if not decay_ids:
+            return 0
+
+        # Try batch Monte Carlo update first
+        storage = self._memory._storage
+        try:
+            evidence = [
+                {"external_id": ext_id, "confidence": 0.3}
+                for ext_id in decay_ids
+            ]
+            await storage.update_and_apply_probabilities(evidence)
+            logger.info("Batch decay: %d beliefs via update_and_apply_probabilities", len(decay_ids))
+            return len(decay_ids)
+        except Exception:
+            pass
+
+        # Fallback: sequential record_observation
+        decay_count = 0
+        for ext_id in decay_ids:
             try:
-                # Small negative observation for low-importance beliefs
-                backend._db.record_observation(
+                await storage.record_observation(
                     external_id=ext_id,
                     confirmed=False,
                     source="importance_decay",
@@ -201,9 +221,6 @@ class MemoryConsolidator:
                 decay_count += 1
             except Exception:
                 pass
-
-            if decay_count >= 100:  # Cap per cycle
-                break
 
         return decay_count
 
@@ -216,23 +233,49 @@ class MemoryConsolidator:
         Beliefs about central entities get a small positive confidence
         boost, modeling the cognitive tendency to remember important
         things better.
+
+        Uses batch update_and_apply_probabilities() when available,
+        falling back to sequential record_observation() calls.
         """
         if not importance:
             return 0
-
-        backend = self._memory._backend
-        strengthen_count = 0
 
         # Top 10% by importance
         sorted_scores = sorted(importance.items(), key=lambda x: x[1], reverse=True)
         top_threshold = len(sorted_scores) // 10 or 1
 
+        strengthen_ids: list[str] = []
         for ext_id, score in sorted_scores[:top_threshold]:
             if "/belief-" not in ext_id:
                 continue
+            strengthen_ids.append(ext_id)
+            if len(strengthen_ids) >= 50:  # Cap per cycle
+                break
 
+        if not strengthen_ids:
+            return 0
+
+        # Try batch Monte Carlo update first
+        storage = self._memory._storage
+        try:
+            evidence = [
+                {"external_id": ext_id, "confidence": 0.9}
+                for ext_id in strengthen_ids
+            ]
+            await storage.update_and_apply_probabilities(evidence)
+            logger.info(
+                "Batch strengthen: %d beliefs via update_and_apply_probabilities",
+                len(strengthen_ids),
+            )
+            return len(strengthen_ids)
+        except Exception:
+            pass
+
+        # Fallback: sequential record_observation
+        strengthen_count = 0
+        for ext_id in strengthen_ids:
             try:
-                backend._db.record_observation(
+                await storage.record_observation(
                     external_id=ext_id,
                     confirmed=True,
                     source="importance_strengthen",
@@ -240,9 +283,6 @@ class MemoryConsolidator:
                 strengthen_count += 1
             except Exception:
                 pass
-
-            if strengthen_count >= 50:  # Cap per cycle
-                break
 
         return strengthen_count
 
@@ -260,12 +300,13 @@ class MemoryConsolidator:
           → Generalization: "Maxwell systematically recruited victims"
         """
         backend = self._memory._backend
+        storage = self._memory._storage
         generalizations_created = 0
 
         # Query triples directly to get beliefs WITH triplet data.
         # (query_beliefs returns search docs first which lack triplets)
         try:
-            triples = backend._db.query_triples(min_probability=0.4, k=self._max_nodes if self._max_nodes else 100_000)
+            triples = await storage.query_triples(min_probability=0.4, k=self._max_nodes if self._max_nodes else 100_000)
             beliefs = []
             for t in triples:
                 b = backend._triple_to_belief(t)
@@ -406,11 +447,11 @@ class MemoryConsolidator:
         "fact about X" + "argument involving X" + "event dated Y involving X"
         """
         result = {"clusters": 0, "links": 0}
-        db = self._memory._backend._db
+        storage = self._memory._storage
 
         # Use Louvain to find clusters
         try:
-            communities = db.louvain_communities(resolution=1.0)
+            communities = await storage.louvain_communities(resolution=1.0)
         except Exception:
             return result
 
@@ -438,7 +479,7 @@ class MemoryConsolidator:
             belief_ids = [m for m in members if "/belief-" in m]
             if len(belief_ids) >= 2:
                 try:
-                    db.add_cooccurrences(
+                    await storage.add_cooccurrences(
                         belief_ids[:20],  # Cap at 20 per community
                         session_id=f"cluster-{comm_id}",
                     )

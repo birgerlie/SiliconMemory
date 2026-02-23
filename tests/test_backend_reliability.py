@@ -1,7 +1,14 @@
-"""Focused tests for backend reliability controls."""
+"""Focused tests for backend reliability controls.
+
+Tests decomposed stores (StorageLayer, BeliefStore, ExperienceStore,
+DecisionStore, WorkingStore, ReflectionTracker) directly instead of through the
+SiliconDBBackend facade.
+"""
 
 from __future__ import annotations
 
+import asyncio
+import threading
 from datetime import timedelta
 from unittest.mock import MagicMock
 from uuid import uuid4
@@ -12,8 +19,44 @@ from silicon_memory.core.decision import Decision
 from silicon_memory.core.types import Belief, SourceType, Triplet
 from silicon_memory.core.utils import utc_now
 from silicon_memory.security.types import UserContext
-from silicon_memory.storage.silicondb_backend import SiliconDBBackend, SiliconDBConfig
+from silicon_memory.storage._converters import (
+    doc_to_experience,
+    search_result_to_experience,
+    triple_to_belief,
+)
+from silicon_memory.storage.beliefs import BeliefStore
+from silicon_memory.storage.config import SiliconDBConfig
+from silicon_memory.storage.decisions import DecisionStore
+from silicon_memory.storage.engine import StorageLayer
+from silicon_memory.storage.experiences import ExperienceStore
+from silicon_memory.storage.reflection_tracking import ReflectionTracker
+from silicon_memory.storage.working import WorkingStore
 from silicon_memory.temporal.decay import DecayConfig
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_storage(**overrides: object) -> StorageLayer:
+    """Create a StorageLayer with test defaults, bypassing __init__."""
+    s = StorageLayer.__new__(StorageLayer)
+    s._config = overrides.get("config", SiliconDBConfig(
+        path="", retry_attempts=3, retry_base_ms=1, retry_max_ms=2,
+    ))
+    s._db = overrides.get("db", MagicMock())
+    s._decay_config = overrides.get("decay_config", DecayConfig())
+    s._user_context = overrides.get("user_context", UserContext(user_id="u", tenant_id="t"))
+    s._policy_engine = overrides.get("policy_engine", MagicMock())
+    s._working_keys = overrides.get("working_keys", set())
+    s._experience_external_ids = overrides.get("experience_external_ids", set())
+    s._extraction_external_ids = overrides.get("extraction_external_ids", set())
+    s._mutation_semaphore = asyncio.Semaphore(50)
+    s._idempotency_seen = {}
+    s._idempotency_lock = threading.Lock()
+    s._idempotency_last_gc = 0.0
+    return s
 
 
 class _FakeDecisionDB:
@@ -26,260 +69,6 @@ class _FakeDecisionDB:
 
     def add_edge(self, *args, **kwargs):  # noqa: ANN002, ANN003
         return None
-
-
-@pytest.mark.asyncio
-async def test_run_db_retries_transient_error():
-    """Transient transport errors should be retried."""
-    backend = SiliconDBBackend.__new__(SiliconDBBackend)
-    backend._config = SiliconDBConfig(path="", retry_attempts=3, retry_base_ms=1, retry_max_ms=2)
-    backend._db = MagicMock()
-    backend._decay_config = DecayConfig()
-    backend._user_context = UserContext(user_id="u", tenant_id="t")
-    backend._policy_engine = MagicMock()
-    backend._working_keys = set()
-
-    calls = {"n": 0}
-
-    def _op():
-        calls["n"] += 1
-        if calls["n"] < 3:
-            raise RuntimeError("service unavailable")
-        return "ok"
-
-    result = await backend._run_db("retryable_op", _op, retry=True)
-    assert result == "ok"
-    assert calls["n"] == 3
-
-
-@pytest.mark.asyncio
-async def test_run_db_does_not_retry_non_transient():
-    """Non-transient errors should fail fast."""
-    backend = SiliconDBBackend.__new__(SiliconDBBackend)
-    backend._config = SiliconDBConfig(path="", retry_attempts=5, retry_base_ms=1, retry_max_ms=2)
-    backend._db = MagicMock()
-    backend._decay_config = DecayConfig()
-    backend._user_context = UserContext(user_id="u", tenant_id="t")
-    backend._policy_engine = MagicMock()
-    backend._working_keys = set()
-
-    calls = {"n": 0}
-
-    def _op():
-        calls["n"] += 1
-        raise RuntimeError("validation failed")
-
-    with pytest.raises(RuntimeError):
-        await backend._run_db("non_retryable_op", _op, retry=True)
-    assert calls["n"] == 1
-
-
-@pytest.mark.asyncio
-async def test_commit_decision_is_idempotent():
-    """Duplicate decision commit payload should be suppressed within TTL."""
-    backend = SiliconDBBackend.__new__(SiliconDBBackend)
-    backend._config = SiliconDBConfig(path="", idempotency_ttl_s=600, retry_attempts=1)
-    backend._db = _FakeDecisionDB()
-    backend._decay_config = DecayConfig()
-    backend._user_context = UserContext(user_id="u", tenant_id="t")
-    backend._policy_engine = MagicMock()
-    backend._working_keys = set()
-
-    decision = Decision(title="Use PostgreSQL", description="Primary DB")
-    await backend.commit_decision(decision)
-    await backend.commit_decision(decision)
-
-    assert backend._db.ingest_calls == 1
-
-
-@pytest.mark.asyncio
-async def test_get_beliefs_by_tag_matches_native_tags():
-    """Tag lookup should work when tags are stored as native lists."""
-
-    class _Triple:
-        external_id = "t/u/belief-1"
-        subject = "Alice"
-        predicate = "hypothetically"
-        object_value = "Bob"
-        probability = 0.6
-        sources: dict[str, float] = {}
-        metadata = {
-            "belief_id": "25e8db47-e5ca-4a56-b89d-cf65c8fd0072",
-            "status": "provisional",
-            "tags": ["hypothesis", "deterministic_discovery"],
-        }
-
-    backend = SiliconDBBackend.__new__(SiliconDBBackend)
-    backend._query_triples = lambda **kwargs: [_Triple()]  # noqa: ARG005
-    backend._search_by_type = lambda *args, **kwargs: []  # noqa: ARG005
-    backend._can_access = lambda *args, **kwargs: True  # noqa: ARG005
-
-    beliefs = await backend.get_beliefs_by_tag("hypothesis", limit=10, min_confidence=0.0)
-    assert len(beliefs) == 1
-    assert "hypothesis" in beliefs[0].tags
-
-
-@pytest.mark.asyncio
-async def test_find_claim_merge_candidates_scores_exact_triplet() -> None:
-    class _Triple:
-        external_id = "t/u/belief-1"
-        subject = "Alice"
-        predicate = "works_at"
-        object_value = "ACME"
-        probability = 0.82
-        sources: dict[str, float] = {}
-        metadata = {
-            "belief_id": "a5e90e3b-7b2d-45b5-939e-c3c7b8355f85",
-            "status": "provisional",
-            "canonical_claim_id": "a5e90e3b-7b2d-45b5-939e-c3c7b8355f85",
-        }
-
-    backend = SiliconDBBackend.__new__(SiliconDBBackend)
-    backend._query_triples = lambda **kwargs: [_Triple()]  # noqa: ARG005
-    backend._search_by_type = lambda *args, **kwargs: []  # noqa: ARG005
-    backend._can_access = lambda *args, **kwargs: True  # noqa: ARG005
-
-    belief = Belief(
-        triplet=Triplet("Alice", "works_at", "ACME"),
-        confidence=0.75,
-    )
-    candidates = await backend.find_claim_merge_candidates(belief, limit=5)
-    assert len(candidates) == 1
-    assert candidates[0].score >= 0.99
-    assert candidates[0].subject == "Alice"
-    assert candidates[0].predicate == "works_at"
-
-
-@pytest.mark.asyncio
-async def test_query_beliefs_collapses_same_canonical_claim() -> None:
-    canonical_id = "3f9c6a8d-f813-4f8e-9e57-4153ebb3b7e4"
-    backend = SiliconDBBackend.__new__(SiliconDBBackend)
-    backend._weighted_search = lambda *args, **kwargs: [  # noqa: ARG005
-        {
-            "node_type": "belief_surface",
-            "text": "Alice works at ACME",
-            "probability": 0.8,
-            "external_id": "t/u/belief_surface-1",
-            "metadata": {
-                "belief_id": "8a73dbf6-f5e8-4124-bbd8-4f240f74776a",
-                "status": "provisional",
-                "canonical_claim_id": canonical_id,
-                "triplet": {"subject": "Alice", "predicate": "works_at", "object": "ACME"},
-                "tags": ["extracted"],
-            },
-        },
-        {
-            "node_type": "belief",
-            "text": "Alice is employed by ACME",
-            "probability": 0.79,
-            "external_id": "t/u/belief-2",
-            "metadata": {
-                "belief_id": "e6be4c2d-95d8-48ec-9ae2-b7ad748eec14",
-                "status": "provisional",
-                "canonical_claim_id": canonical_id,
-                "triplet": {"subject": "Alice", "predicate": "employed_by", "object": "ACME"},
-                "tags": ["extracted"],
-            },
-        },
-    ]
-    backend._query_triples = lambda **kwargs: []  # noqa: ARG005
-    backend._can_access = lambda *args, **kwargs: True  # noqa: ARG005
-
-    beliefs = await backend.query_beliefs("Alice ACME", limit=10)
-    assert len(beliefs) == 1
-    assert beliefs[0].metadata.get("canonical_claim_id") == canonical_id
-
-
-def test_triple_to_belief_hydrates_source_metadata():
-    """Belief conversion should preserve source provenance metadata."""
-
-    class _Triple:
-        subject = "Alice"
-        predicate = "works with"
-        object_value = "Bob"
-        probability = 0.77
-        sources: dict[str, float] = {}
-        metadata = {
-            "belief_id": "6f16f82d-7f91-4272-b269-709c5dc5a5d0",
-            "status": "provisional",
-            "source_id": "reflection_engine",
-            "source_type": "reflection",
-            "source_reliability": 0.91,
-            "source_metadata": {"grounding_doc_id": "doc-42", "evidence_span": "line 9"},
-        }
-
-    backend = SiliconDBBackend.__new__(SiliconDBBackend)
-    belief = backend._triple_to_belief(_Triple())  # noqa: SLF001
-    assert belief is not None
-    assert belief.source is not None
-    assert belief.source.id == "reflection_engine"
-    assert belief.source.type == SourceType.REFLECTION
-    assert belief.source.metadata.get("grounding_doc_id") == "doc-42"
-
-
-def test_triple_to_belief_hydrates_native_complex_metadata():
-    """Triple conversion should preserve native tags/evidence/source metadata."""
-
-    class _Triple:
-        subject = "Alpha"
-        predicate = "related_to"
-        object_value = "Beta"
-        probability = 0.63
-        sources: dict[str, float] = {}
-        metadata = {
-            "belief_id": "1382d486-cf63-4e93-ac7f-65b1154d9eb4",
-            "status": "provisional",
-            "tags": ["hypothesis", "deterministic_discovery"],
-            "evidence_for": ["6f16f82d-7f91-4272-b269-709c5dc5a5d0"],
-            "source_id": "reflection_engine",
-            "source_type": "reflection",
-            "source_reliability": 0.7,
-            "source_metadata": {"information_gain": 0.88},
-        }
-
-    backend = SiliconDBBackend.__new__(SiliconDBBackend)
-    belief = backend._triple_to_belief(_Triple())  # noqa: SLF001
-    assert belief is not None
-    assert "hypothesis" in belief.tags
-    assert len(belief.evidence_for) == 1
-    assert belief.source is not None
-    assert belief.source.metadata.get("information_gain") == 0.88
-
-
-def test_doc_to_experience_hydrates_context_dict_and_processed_bool() -> None:
-    backend = SiliconDBBackend.__new__(SiliconDBBackend)
-    exp = backend._doc_to_experience(  # noqa: SLF001
-        {
-            "text": "Contextful experience",
-            "metadata": {
-                "experience_id": "f8f9f560-a95f-4bc4-ae3d-bcdf446ca4f6",
-                "occurred_at": "2026-02-19T11:00:00+00:00",
-                "context": {"document_id": "doc-42", "title": "Sample"},
-                "processed": "true",
-            },
-        },
-    )
-    assert exp is not None
-    assert exp.context.get("document_id") == "doc-42"
-    assert exp.processed is True
-
-
-def test_search_result_to_experience_hydrates_context_json() -> None:
-    backend = SiliconDBBackend.__new__(SiliconDBBackend)
-    exp = backend._search_result_to_experience(  # noqa: SLF001
-        {
-            "text": "JSON context experience",
-            "metadata": {
-                "experience_id": "2ec5ef75-eaf9-4f64-b4ac-c8c0664f0706",
-                "occurred_at": "2026-02-19T11:00:00+00:00",
-                "context": "{\"document_id\": \"doc-77\"}",
-                "processed": "false",
-            },
-        },
-    )
-    assert exp is not None
-    assert exp.context.get("document_id") == "doc-77"
-    assert exp.processed is False
 
 
 class _FakeExperienceDB:
@@ -325,23 +114,290 @@ class _FakeWorkingIndexDB:
         return self.docs[external_id]
 
 
-def _build_backend_with_experience_docs(
+def _build_experience_storage(
     docs: dict[str, dict],
     *,
     use_consistency_waits: bool = False,
-) -> SiliconDBBackend:
-    backend = SiliconDBBackend.__new__(SiliconDBBackend)
-    backend._config = SiliconDBConfig(
-        path="", retry_attempts=1, use_consistency_waits=use_consistency_waits,
+) -> tuple[StorageLayer, ExperienceStore]:
+    """Build a StorageLayer + ExperienceStore over a _FakeExperienceDB."""
+    storage = _make_storage(
+        config=SiliconDBConfig(
+            path="", retry_attempts=1, use_consistency_waits=use_consistency_waits,
+        ),
+        db=_FakeExperienceDB(docs),
+        experience_external_ids=set(docs.keys()),
     )
-    backend._db = _FakeExperienceDB(docs)
-    backend._decay_config = DecayConfig()
-    backend._user_context = UserContext(user_id="u", tenant_id="t")
-    backend._policy_engine = MagicMock()
-    backend._working_keys = set()
-    backend._experience_external_ids = set(docs.keys())
-    backend._search_experiences_broad = lambda *args, **kwargs: []  # noqa: ARG005
-    return backend
+    return storage, ExperienceStore(storage)
+
+
+# ---------------------------------------------------------------------------
+# Retry tests  (StorageLayer.run_db)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_run_db_retries_transient_error():
+    """Transient transport errors should be retried."""
+    storage = _make_storage(
+        config=SiliconDBConfig(path="", retry_attempts=3, retry_base_ms=1, retry_max_ms=2),
+    )
+
+    calls = {"n": 0}
+
+    def _op():
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise RuntimeError("service unavailable")
+        return "ok"
+
+    result = await storage.run_db("retryable_op", _op, retry=True)
+    assert result == "ok"
+    assert calls["n"] == 3
+
+
+@pytest.mark.asyncio
+async def test_run_db_does_not_retry_non_transient():
+    """Non-transient errors should fail fast."""
+    storage = _make_storage(
+        config=SiliconDBConfig(path="", retry_attempts=5, retry_base_ms=1, retry_max_ms=2),
+    )
+
+    calls = {"n": 0}
+
+    def _op():
+        calls["n"] += 1
+        raise RuntimeError("validation failed")
+
+    with pytest.raises(RuntimeError):
+        await storage.run_db("non_retryable_op", _op, retry=True)
+    assert calls["n"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Idempotency test  (DecisionStore.commit_decision)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_commit_decision_is_idempotent():
+    """Duplicate decision commit payload should be suppressed within TTL."""
+    storage = _make_storage(
+        config=SiliconDBConfig(path="", idempotency_ttl_s=600, retry_attempts=1),
+        db=_FakeDecisionDB(),
+    )
+    decisions = DecisionStore(storage)
+
+    decision = Decision(title="Use PostgreSQL", description="Primary DB")
+    await decisions.commit_decision(decision)
+    await decisions.commit_decision(decision)
+
+    assert storage._db.ingest_calls == 1
+
+
+# ---------------------------------------------------------------------------
+# Belief tag / query / merge tests  (BeliefStore)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_beliefs_by_tag_matches_native_tags():
+    """Tag lookup should work when tags are stored as native lists."""
+
+    class _Triple:
+        external_id = "t/u/belief-1"
+        subject = "Alice"
+        predicate = "hypothetically"
+        object_value = "Bob"
+        probability = 0.6
+        sources: dict[str, float] = {}
+        metadata = {
+            "belief_id": "25e8db47-e5ca-4a56-b89d-cf65c8fd0072",
+            "status": "provisional",
+            "tags": ["hypothesis", "deterministic_discovery"],
+        }
+
+    storage = _make_storage()
+    # Monkey-patch StorageLayer helpers for the test
+    storage.query_triples_sync = lambda **kwargs: [_Triple()]  # noqa: ARG005
+    storage.search_by_type = lambda *args, **kwargs: []  # noqa: ARG005
+    storage.can_access = lambda *args, **kwargs: True  # noqa: ARG005
+
+    beliefs_store = BeliefStore(storage)
+    beliefs = await beliefs_store.get_beliefs_by_tag("hypothesis", limit=10, min_confidence=0.0)
+    assert len(beliefs) == 1
+    assert "hypothesis" in beliefs[0].tags
+
+
+@pytest.mark.asyncio
+async def test_find_claim_merge_candidates_scores_exact_triplet() -> None:
+    class _Triple:
+        external_id = "t/u/belief-1"
+        subject = "Alice"
+        predicate = "works_at"
+        object_value = "ACME"
+        probability = 0.82
+        sources: dict[str, float] = {}
+        metadata = {
+            "belief_id": "a5e90e3b-7b2d-45b5-939e-c3c7b8355f85",
+            "status": "provisional",
+            "canonical_claim_id": "a5e90e3b-7b2d-45b5-939e-c3c7b8355f85",
+        }
+
+    storage = _make_storage()
+    storage.query_triples_sync = lambda **kwargs: [_Triple()]  # noqa: ARG005
+    storage.search_by_type = lambda *args, **kwargs: []  # noqa: ARG005
+    storage.can_access = lambda *args, **kwargs: True  # noqa: ARG005
+
+    beliefs_store = BeliefStore(storage)
+    belief = Belief(
+        triplet=Triplet("Alice", "works_at", "ACME"),
+        confidence=0.75,
+    )
+    candidates = await beliefs_store.find_claim_merge_candidates(belief, limit=5)
+    assert len(candidates) == 1
+    assert candidates[0].score >= 0.99
+    assert candidates[0].subject == "Alice"
+    assert candidates[0].predicate == "works_at"
+
+
+@pytest.mark.asyncio
+async def test_query_beliefs_collapses_same_canonical_claim() -> None:
+    canonical_id = "3f9c6a8d-f813-4f8e-9e57-4153ebb3b7e4"
+
+    storage = _make_storage()
+    storage.weighted_search = lambda *args, **kwargs: [  # noqa: ARG005
+        {
+            "node_type": "belief_surface",
+            "text": "Alice works at ACME",
+            "probability": 0.8,
+            "external_id": "t/u/belief_surface-1",
+            "metadata": {
+                "belief_id": "8a73dbf6-f5e8-4124-bbd8-4f240f74776a",
+                "status": "provisional",
+                "canonical_claim_id": canonical_id,
+                "triplet": {"subject": "Alice", "predicate": "works_at", "object": "ACME"},
+                "tags": ["extracted"],
+            },
+        },
+        {
+            "node_type": "belief",
+            "text": "Alice is employed by ACME",
+            "probability": 0.79,
+            "external_id": "t/u/belief-2",
+            "metadata": {
+                "belief_id": "e6be4c2d-95d8-48ec-9ae2-b7ad748eec14",
+                "status": "provisional",
+                "canonical_claim_id": canonical_id,
+                "triplet": {"subject": "Alice", "predicate": "employed_by", "object": "ACME"},
+                "tags": ["extracted"],
+            },
+        },
+    ]
+    storage.query_triples_sync = lambda **kwargs: []  # noqa: ARG005
+    storage.can_access = lambda *args, **kwargs: True  # noqa: ARG005
+
+    beliefs_store = BeliefStore(storage)
+    beliefs = await beliefs_store.query_beliefs("Alice ACME", limit=10)
+    assert len(beliefs) == 1
+    assert beliefs[0].metadata.get("canonical_claim_id") == canonical_id
+
+
+# ---------------------------------------------------------------------------
+# Converter tests  (triple_to_belief, doc_to_experience, search_result_to_experience)
+# ---------------------------------------------------------------------------
+
+
+def test_triple_to_belief_hydrates_source_metadata():
+    """Belief conversion should preserve source provenance metadata."""
+
+    class _Triple:
+        subject = "Alice"
+        predicate = "works with"
+        object_value = "Bob"
+        probability = 0.77
+        sources: dict[str, float] = {}
+        metadata = {
+            "belief_id": "6f16f82d-7f91-4272-b269-709c5dc5a5d0",
+            "status": "provisional",
+            "source_id": "reflection_engine",
+            "source_type": "reflection",
+            "source_reliability": 0.91,
+            "source_metadata": {"grounding_doc_id": "doc-42", "evidence_span": "line 9"},
+        }
+
+    belief = triple_to_belief(_Triple())
+    assert belief is not None
+    assert belief.source is not None
+    assert belief.source.id == "reflection_engine"
+    assert belief.source.type == SourceType.REFLECTION
+    assert belief.source.metadata.get("grounding_doc_id") == "doc-42"
+
+
+def test_triple_to_belief_hydrates_native_complex_metadata():
+    """Triple conversion should preserve native tags/evidence/source metadata."""
+
+    class _Triple:
+        subject = "Alpha"
+        predicate = "related_to"
+        object_value = "Beta"
+        probability = 0.63
+        sources: dict[str, float] = {}
+        metadata = {
+            "belief_id": "1382d486-cf63-4e93-ac7f-65b1154d9eb4",
+            "status": "provisional",
+            "tags": ["hypothesis", "deterministic_discovery"],
+            "evidence_for": ["6f16f82d-7f91-4272-b269-709c5dc5a5d0"],
+            "source_id": "reflection_engine",
+            "source_type": "reflection",
+            "source_reliability": 0.7,
+            "source_metadata": {"information_gain": 0.88},
+        }
+
+    belief = triple_to_belief(_Triple())
+    assert belief is not None
+    assert "hypothesis" in belief.tags
+    assert len(belief.evidence_for) == 1
+    assert belief.source is not None
+    assert belief.source.metadata.get("information_gain") == 0.88
+
+
+def test_doc_to_experience_hydrates_context_dict_and_processed_bool() -> None:
+    exp = doc_to_experience(
+        {
+            "text": "Contextful experience",
+            "metadata": {
+                "experience_id": "f8f9f560-a95f-4bc4-ae3d-bcdf446ca4f6",
+                "occurred_at": "2026-02-19T11:00:00+00:00",
+                "context": {"document_id": "doc-42", "title": "Sample"},
+                "processed": "true",
+            },
+        },
+    )
+    assert exp is not None
+    assert exp.context.get("document_id") == "doc-42"
+    assert exp.processed is True
+
+
+def test_search_result_to_experience_hydrates_context_json() -> None:
+    exp = search_result_to_experience(
+        {
+            "text": "JSON context experience",
+            "metadata": {
+                "experience_id": "2ec5ef75-eaf9-4f64-b4ac-c8c0664f0706",
+                "occurred_at": "2026-02-19T11:00:00+00:00",
+                "context": "{\"document_id\": \"doc-77\"}",
+                "processed": "false",
+            },
+        },
+    )
+    assert exp is not None
+    assert exp.context.get("document_id") == "doc-77"
+    assert exp.processed is False
+
+
+# ---------------------------------------------------------------------------
+# Experience tests  (ExperienceStore)
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -363,9 +419,9 @@ async def test_recent_experiences_falls_back_to_direct_ids_when_search_empty() -
             },
         },
     }
-    backend = _build_backend_with_experience_docs(docs)
+    storage, experiences = _build_experience_storage(docs)
 
-    recent = await backend.get_recent_experiences(hours=24, limit=10)
+    recent = await experiences.get_recent_experiences(hours=24, limit=10)
     assert len(recent) == 1
     assert recent[0].id == exp_id
 
@@ -388,10 +444,10 @@ async def test_unprocessed_and_unextracted_fallback_to_direct_ids() -> None:
             },
         },
     }
-    backend = _build_backend_with_experience_docs(docs)
+    storage, experiences = _build_experience_storage(docs)
 
-    unprocessed = await backend.get_unprocessed_experiences(limit=10)
-    unextracted = await backend.get_unextracted_experiences(limit=10)
+    unprocessed = await experiences.get_unprocessed_experiences(limit=10)
+    unextracted = await experiences.get_unextracted_experiences(limit=10)
     assert len(unprocessed) == 1
     assert len(unextracted) == 1
     assert unprocessed[0].id == exp_id
@@ -428,9 +484,9 @@ async def test_count_extraction_progress_uses_indexed_direct_fallback() -> None:
             },
         },
     }
-    backend = _build_backend_with_experience_docs(docs)
+    storage, experiences = _build_experience_storage(docs)
 
-    progress = await backend.count_extraction_progress()
+    progress = await experiences.count_extraction_progress()
     assert progress == {"extracted": 1, "unextracted": 1, "total": 2}
 
 
@@ -464,9 +520,9 @@ async def test_count_extraction_progress_respects_access_scope() -> None:
             },
         },
     }
-    backend = _build_backend_with_experience_docs(docs)
+    storage, experiences = _build_experience_storage(docs)
 
-    progress = await backend.count_extraction_progress()
+    progress = await experiences.count_extraction_progress()
     assert progress == {"extracted": 0, "unextracted": 1, "total": 1}
 
 
@@ -488,8 +544,8 @@ async def test_mark_experience_processed_preserves_existing_extracted_flag() -> 
             },
         },
     }
-    backend = _build_backend_with_experience_docs(docs)
-    await backend.mark_experiences_processed([exp_id])
+    storage, experiences = _build_experience_storage(docs)
+    await experiences.mark_experiences_processed([exp_id])
     updated = docs[external_id]["metadata"]
     assert updated["processed"] is True
     assert updated["extracted"] is True
@@ -513,8 +569,8 @@ async def test_mark_experience_extracted_preserves_existing_processed_flag() -> 
             },
         },
     }
-    backend = _build_backend_with_experience_docs(docs)
-    await backend.mark_experiences_extracted([exp_id])
+    storage, experiences = _build_experience_storage(docs)
+    await experiences.mark_experiences_extracted([exp_id])
     updated = docs[external_id]["metadata"]
     assert updated["processed"] is True
     assert updated["extracted"] is True
@@ -550,15 +606,15 @@ async def test_mark_experience_flags_preserved_in_either_update_order() -> None:
             },
         },
     }
-    backend = _build_backend_with_experience_docs(docs)
+    storage, experiences = _build_experience_storage(docs)
 
     # extracted -> processed
-    await backend.mark_experiences_extracted([exp_a])
-    await backend.mark_experiences_processed([exp_a])
+    await experiences.mark_experiences_extracted([exp_a])
+    await experiences.mark_experiences_processed([exp_a])
 
     # processed -> extracted
-    await backend.mark_experiences_processed([exp_b])
-    await backend.mark_experiences_extracted([exp_b])
+    await experiences.mark_experiences_processed([exp_b])
+    await experiences.mark_experiences_extracted([exp_b])
 
     assert docs[f"t/u/experience-{exp_a}"]["metadata"]["processed"] is True
     assert docs[f"t/u/experience-{exp_a}"]["metadata"]["extracted"] is True
@@ -568,17 +624,16 @@ async def test_mark_experience_flags_preserved_in_either_update_order() -> None:
 
 @pytest.mark.asyncio
 async def test_count_extraction_progress_filters_inaccessible_search_results() -> None:
-    backend = SiliconDBBackend.__new__(SiliconDBBackend)
-    backend._config = SiliconDBConfig(path="", retry_attempts=1, use_consistency_waits=False)
-    backend._db = MagicMock()
-    backend._decay_config = DecayConfig()
-    backend._user_context = UserContext(user_id="u", tenant_id="t")
-    backend._policy_engine = MagicMock()
-    backend._working_keys = set()
-    backend._experience_external_ids = set()
-    backend._search_experiences_broad = lambda *args, **kwargs: [  # noqa: ARG005
+    storage = _make_storage(
+        config=SiliconDBConfig(path="", retry_attempts=1, use_consistency_waits=False),
+    )
+    experience_store = ExperienceStore(storage)
+
+    # Monkey-patch _search_experiences_broad to return mixed-access results
+    experience_store._search_experiences_broad = lambda *args, **kwargs: [  # noqa: ARG005
         {
             "external_id": "t/u/experience-visible",
+            "node_type": "experience",
             "metadata": {
                 "owner_id": "u",
                 "tenant_id": "t",
@@ -588,6 +643,7 @@ async def test_count_extraction_progress_filters_inaccessible_search_results() -
         },
         {
             "external_id": "other_t/other_u/experience-hidden",
+            "node_type": "experience",
             "metadata": {
                 "owner_id": "other_u",
                 "tenant_id": "other_t",
@@ -597,8 +653,13 @@ async def test_count_extraction_progress_filters_inaccessible_search_results() -
         },
     ]
 
-    progress = await backend.count_extraction_progress()
+    progress = await experience_store.count_extraction_progress()
     assert progress == {"extracted": 1, "unextracted": 0, "total": 1}
+
+
+# ---------------------------------------------------------------------------
+# Extraction item / reflection tracking tests  (ReflectionTracker + BeliefStore)
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -619,27 +680,28 @@ async def test_get_unprocessed_extraction_items_uses_indexed_direct_fallback() -
             "node_type": "extraction_item",
         },
     }
-    backend = _build_backend_with_experience_docs(docs, use_consistency_waits=False)
-    backend._extraction_external_ids = {extraction_external_id}  # noqa: SLF001
-    backend._search_by_type = lambda *args, **kwargs: []  # noqa: ARG005, SLF001
-    backend._query_triples = lambda **kwargs: []  # noqa: ARG005, SLF001
+    storage = _make_storage(
+        config=SiliconDBConfig(path="", retry_attempts=1, use_consistency_waits=False),
+        db=_FakeExperienceDB(docs),
+        extraction_external_ids={extraction_external_id},
+    )
+    storage.search_by_type = lambda *args, **kwargs: []  # noqa: ARG005
+    storage.query_triples_sync = lambda **kwargs: []  # noqa: ARG005
 
-    items = await backend.get_unprocessed_extraction_items(limit=10)
+    beliefs_store = BeliefStore(storage)
+    tracker = ReflectionTracker(storage, beliefs_store)
+    items = await tracker.get_unprocessed_extraction_items(limit=10)
     assert len(items) == 1
     assert items[0]["external_id"] == extraction_external_id
 
 
 @pytest.mark.asyncio
 async def test_write_extraction_item_tracks_external_id() -> None:
-    backend = SiliconDBBackend.__new__(SiliconDBBackend)
-    backend._config = SiliconDBConfig(path="", retry_attempts=1, use_consistency_waits=False)
-    backend._db = _FakeExperienceDB({})
-    backend._decay_config = DecayConfig()
-    backend._user_context = UserContext(user_id="u", tenant_id="t")
-    backend._policy_engine = MagicMock()
-    backend._working_keys = set()
-    backend._experience_external_ids = set()
-    backend._extraction_external_ids = set()
+    storage = _make_storage(
+        config=SiliconDBConfig(path="", retry_attempts=1, use_consistency_waits=False),
+        db=_FakeExperienceDB({}),
+    )
+    beliefs_store = BeliefStore(storage)
 
     belief = Belief(
         id=uuid4(),
@@ -649,14 +711,19 @@ async def test_write_extraction_item_tracks_external_id() -> None:
     )
     belief_external_id = f"t/u/belief-{belief.id}"
 
-    await backend._write_extraction_item_for_belief(  # noqa: SLF001
+    await beliefs_store._write_extraction_item_for_belief(
         belief=belief,
         belief_external_id=belief_external_id,
         storage_type="document",
     )
 
     extraction_external_id = f"t/u/extraction-{belief.id}"
-    assert extraction_external_id in backend._extraction_external_ids  # noqa: SLF001
+    assert extraction_external_id in storage._extraction_external_ids
+
+
+# ---------------------------------------------------------------------------
+# Working memory tests  (WorkingStore)
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -679,15 +746,13 @@ async def test_get_all_working_loads_keys_from_persisted_index() -> None:
             },
         },
     }
-    backend = SiliconDBBackend.__new__(SiliconDBBackend)
-    backend._config = SiliconDBConfig(path="", retry_attempts=1, use_consistency_waits=False)
-    backend._db = _FakeWorkingIndexDB(docs)
-    backend._decay_config = DecayConfig()
-    backend._user_context = UserContext(user_id="u", tenant_id="t")
-    backend._policy_engine = MagicMock()
-    backend._working_keys = set()
+    storage = _make_storage(
+        config=SiliconDBConfig(path="", retry_attempts=1, use_consistency_waits=False),
+        db=_FakeWorkingIndexDB(docs),
+    )
+    working = WorkingStore(storage)
 
-    all_working = await backend.get_all_working()
+    all_working = await working.get_all_working()
 
     assert "open_question_1" in all_working
-    assert backend._working_keys == {"open_question_1"}
+    assert storage._working_keys == {"open_question_1"}

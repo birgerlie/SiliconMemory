@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from silicon_memory.snapshot.types import ContextSnapshot, SnapshotConfig
 
 if TYPE_CHECKING:
     from silicon_memory.memory.silicondb_router import SiliconMemory
-    from silicon_memory.storage.silicondb_backend import SiliconDBBackend
     from silicon_memory.reflection.llm import LLMProvider
+    from silicon_memory.storage.snapshots import SnapshotStore
+
+logger = logging.getLogger(__name__)
 
 
 class SnapshotService:
@@ -23,20 +26,20 @@ class SnapshotService:
 
     def __init__(
         self,
-        memory: "SiliconMemory",
-        backend: "SiliconDBBackend",
+        memory: SiliconMemory,
+        snapshots: SnapshotStore,
         config: SnapshotConfig | None = None,
-        llm_provider: "LLMProvider | None" = None,
+        llm_provider: LLMProvider | None = None,
     ) -> None:
         self._memory = memory
-        self._backend = backend
+        self._snapshots = snapshots
         self._config = config or SnapshotConfig()
         self._llm_provider = llm_provider
 
     async def create_snapshot(
         self,
         task_context: str,
-        llm_provider: "LLMProvider | None" = None,
+        llm_provider: LLMProvider | None = None,
     ) -> ContextSnapshot:
         """Create a snapshot of the current working state.
 
@@ -84,14 +87,33 @@ class SnapshotService:
         )
 
         # Store in backend
-        await self._backend.store_snapshot(snapshot)
+        await self._snapshots.store_snapshot(snapshot)
+
+        # Create a native SiliconDB belief snapshot alongside the working
+        # memory snapshot for point-in-time belief state recovery.
+        try:
+            storage = self._memory._storage
+            beliefs = await self._memory._beliefs.get_beliefs_by_tag(
+                "extracted", limit=500, min_confidence=0.0,
+            )
+            if beliefs:
+                belief_ext_ids = [
+                    storage.build_external_id("belief", b.id)
+                    for b in beliefs
+                ]
+                await storage.snapshot_beliefs(
+                    belief_ext_ids,
+                    snapshot_id=f"ctx-{snapshot.id}",
+                )
+        except Exception as e:
+            logger.debug("Native belief snapshot failed (non-critical): %s", e)
 
         return snapshot
 
     async def on_session_end(
         self,
         task_context: str,
-        llm_provider: "LLMProvider | None" = None,
+        llm_provider: LLMProvider | None = None,
     ) -> ContextSnapshot:
         """Auto-create a snapshot when a session ends.
 
@@ -119,7 +141,7 @@ class SnapshotService:
         Returns:
             The latest ContextSnapshot or None
         """
-        snapshots = await self._backend.query_snapshots_by_context(
+        snapshots = await self._snapshots.query_snapshots_by_context(
             task_context=task_context,
             limit=1,
         )
@@ -139,7 +161,7 @@ class SnapshotService:
         Returns:
             List of ContextSnapshot objects sorted by created_at desc
         """
-        return await self._backend.query_snapshots_by_context(
+        return await self._snapshots.query_snapshots_by_context(
             task_context=task_context,
             limit=limit,
         )
@@ -149,7 +171,7 @@ class SnapshotService:
         task_context: str,
         working_memory: dict[str, Any],
         recent_experiences: list,
-        provider: "LLMProvider",
+        provider: LLMProvider,
     ) -> tuple[list[str], list[str], list[str]]:
         """Generate a summary using an LLM.
 

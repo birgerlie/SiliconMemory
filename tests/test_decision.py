@@ -137,9 +137,10 @@ class TestDecisionRouter:
     @pytest.mark.asyncio
     async def test_commit_decision_stores_with_snapshot(self):
         """Test that commit_decision creates belief snapshot and stores."""
-        mock_backend = AsyncMock()
-        mock_backend.snapshot_beliefs = AsyncMock(return_value={"snapshot_id": "snap-001"})
-        mock_backend.commit_decision = AsyncMock()
+        mock_snapshots = AsyncMock()
+        mock_snapshots.snapshot_beliefs = AsyncMock(return_value={"snapshot_id": "snap-001"})
+        mock_decisions = AsyncMock()
+        mock_decisions.commit_decision = AsyncMock()
 
         belief_id = uuid4()
         decision = Decision(
@@ -158,47 +159,50 @@ class TestDecisionRouter:
         from silicon_memory.memory.silicondb_router import SiliconMemory
 
         memory = MagicMock(spec=SiliconMemory)
-        memory._backend = mock_backend
+        memory._snapshots = mock_snapshots
+        memory._decisions = mock_decisions
         memory.commit_decision = SiliconMemory.commit_decision.__get__(memory, SiliconMemory)
 
         snapshot_id = await memory.commit_decision(decision)
 
         assert snapshot_id == "snap-001"
         assert decision.belief_snapshot_id == "snap-001"
-        mock_backend.snapshot_beliefs.assert_awaited_once_with([str(belief_id)])
-        mock_backend.commit_decision.assert_awaited_once_with(decision)
+        mock_snapshots.snapshot_beliefs.assert_awaited_once_with([str(belief_id)])
+        mock_decisions.commit_decision.assert_awaited_once_with(decision)
 
     @pytest.mark.asyncio
     async def test_commit_decision_no_assumptions_no_snapshot(self):
         """Test that commit_decision with no assumptions skips snapshot."""
-        mock_backend = AsyncMock()
-        mock_backend.commit_decision = AsyncMock()
+        mock_snapshots = AsyncMock()
+        mock_decisions = AsyncMock()
+        mock_decisions.commit_decision = AsyncMock()
 
         decision = Decision(title="Simple decision")
 
         from silicon_memory.memory.silicondb_router import SiliconMemory
 
         memory = MagicMock(spec=SiliconMemory)
-        memory._backend = mock_backend
+        memory._snapshots = mock_snapshots
+        memory._decisions = mock_decisions
         memory.commit_decision = SiliconMemory.commit_decision.__get__(memory, SiliconMemory)
 
         snapshot_id = await memory.commit_decision(decision)
 
         assert snapshot_id is None
-        mock_backend.snapshot_beliefs.assert_not_awaited()
-        mock_backend.commit_decision.assert_awaited_once()
+        mock_snapshots.snapshot_beliefs.assert_not_awaited()
+        mock_decisions.commit_decision.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_recall_decisions_returns_by_similarity(self):
         """Test that recall_decisions delegates to backend."""
         expected = [Decision(title="Found decision")]
-        mock_backend = AsyncMock()
-        mock_backend.recall_decisions = AsyncMock(return_value=expected)
+        mock_decisions = AsyncMock()
+        mock_decisions.recall_decisions = AsyncMock(return_value=expected)
 
         from silicon_memory.memory.silicondb_router import SiliconMemory
 
         memory = MagicMock(spec=SiliconMemory)
-        memory._backend = mock_backend
+        memory._decisions = mock_decisions
         memory.recall_decisions = SiliconMemory.recall_decisions.__get__(memory, SiliconMemory)
 
         results = await memory.recall_decisions("database", k=5)
@@ -209,20 +213,20 @@ class TestDecisionRouter:
     @pytest.mark.asyncio
     async def test_record_outcome(self):
         """Test recording a decision outcome."""
-        mock_backend = AsyncMock()
-        mock_backend.record_decision_outcome = AsyncMock(return_value=True)
+        mock_decisions = AsyncMock()
+        mock_decisions.record_decision_outcome = AsyncMock(return_value=True)
 
         from silicon_memory.memory.silicondb_router import SiliconMemory
 
         memory = MagicMock(spec=SiliconMemory)
-        memory._backend = mock_backend
+        memory._decisions = mock_decisions
         memory.record_outcome = SiliconMemory.record_outcome.__get__(memory, SiliconMemory)
 
         decision_id = uuid4()
         result = await memory.record_outcome(decision_id, "Worked well")
 
         assert result is True
-        mock_backend.record_decision_outcome.assert_awaited_once_with(decision_id, "Worked well")
+        mock_decisions.record_decision_outcome.assert_awaited_once_with(decision_id, "Worked well")
 
     @pytest.mark.asyncio
     async def test_get_decision_enriches_assumption_drift(self):
@@ -244,12 +248,14 @@ class TestDecisionRouter:
         )
         current_belief = Belief(id=belief_id, content="Team knows SQL", confidence=0.5)
 
-        mock_backend = AsyncMock()
-        mock_backend.get_decision = AsyncMock(return_value=decision)
-        mock_backend.get_belief = AsyncMock(return_value=current_belief)
+        mock_decisions = AsyncMock()
+        mock_decisions.get_decision = AsyncMock(return_value=decision)
+        mock_beliefs = AsyncMock()
+        mock_beliefs.get_belief = AsyncMock(return_value=current_belief)
 
         memory = MagicMock(spec=SiliconMemory)
-        memory._backend = mock_backend
+        memory._decisions = mock_decisions
+        memory._beliefs = mock_beliefs
         memory.get_decision = SiliconMemory.get_decision.__get__(memory, SiliconMemory)
 
         result = await memory.get_decision(decision.id)
@@ -268,20 +274,20 @@ class TestDecisionRouter:
         original_id = uuid4()
         new_decision = Decision(title="Use CockroachDB instead")
 
-        mock_backend = AsyncMock()
-        mock_backend.revise_decision = AsyncMock(return_value=new_decision)
+        mock_decisions = AsyncMock()
+        mock_decisions.revise_decision = AsyncMock(return_value=new_decision)
 
         from silicon_memory.memory.silicondb_router import SiliconMemory
 
         memory = MagicMock(spec=SiliconMemory)
-        memory._backend = mock_backend
+        memory._decisions = mock_decisions
         memory.revise_decision = SiliconMemory.revise_decision.__get__(memory, SiliconMemory)
 
         result = await memory.revise_decision(original_id, new_decision)
 
         assert result is not None
         assert result.title == "Use CockroachDB instead"
-        mock_backend.revise_decision.assert_awaited_once_with(original_id, new_decision)
+        mock_decisions.revise_decision.assert_awaited_once_with(original_id, new_decision)
 
 
 # ============================================================================
@@ -321,8 +327,8 @@ class TestReflectionDecisionReview:
         mock_memory = AsyncMock()
         mock_memory.recall_decisions = AsyncMock(return_value=[decision])
         mock_memory.get_belief = AsyncMock(return_value=current_belief)
-        mock_memory._backend = AsyncMock()
-        mock_memory._backend.update_decision_status = AsyncMock(return_value=True)
+        mock_memory._decisions = AsyncMock()
+        mock_memory._decisions.update_decision_status = AsyncMock(return_value=True)
 
         from silicon_memory.reflection.engine import ReflectionEngine
         from silicon_memory.reflection.types import ReflectionConfig
@@ -335,7 +341,7 @@ class TestReflectionDecisionReview:
 
         # Decision should have been flagged
         assert decision.status == DecisionStatus.REVISIT_SUGGESTED
-        mock_memory._backend.update_decision_status.assert_awaited_once()
+        mock_memory._decisions.update_decision_status.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_reflection_ignores_non_critical_drift(self):
@@ -361,7 +367,7 @@ class TestReflectionDecisionReview:
         mock_memory = AsyncMock()
         mock_memory.recall_decisions = AsyncMock(return_value=[decision])
         mock_memory.get_belief = AsyncMock(return_value=current_belief)
-        mock_memory._backend = AsyncMock()
+        mock_memory._decisions = AsyncMock()
 
         from silicon_memory.reflection.engine import ReflectionEngine
         from silicon_memory.reflection.types import ReflectionConfig

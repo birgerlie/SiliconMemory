@@ -5,13 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from silicon_memory.core.utils import utc_now
 from silicon_memory.security.types import UserContext
 
 if TYPE_CHECKING:
-    from silicon_memory.storage.silicondb_backend import SiliconDBBackend
+    from silicon_memory.storage.engine import StorageLayer
 
 
 class ForgetScope(Enum):
@@ -145,7 +145,7 @@ class ForgettingService:
     - All: Delete all user data (GDPR erasure request)
 
     Example:
-        >>> service = ForgettingService(backend)
+        >>> service = ForgettingService(storage)
         >>>
         >>> # Forget a single entity
         >>> result = await service.forget_entity(user_ctx, "belief-123", "belief")
@@ -157,8 +157,8 @@ class ForgettingService:
         >>> result = await service.forget_all(user_ctx)
     """
 
-    def __init__(self, backend: "SiliconDBBackend") -> None:
-        self._backend = backend
+    def __init__(self, storage: StorageLayer) -> None:
+        self._storage = storage
 
     async def forget(self, request: ForgetRequest) -> ForgetResult:
         """Execute a forget request.
@@ -401,7 +401,7 @@ class ForgettingService:
 
             # Query experiences with this session_id
             prefix = f"{request.user_ctx.tenant_id}/{request.user_ctx.user_id}/"
-            search_results = self._backend._db.search(
+            search_results = await self._storage.search_filtered(
                 query="",
                 k=10000,
                 filter={"session_id": request.session_id},
@@ -411,9 +411,9 @@ class ForgettingService:
                 if doc.external_id.startswith(prefix):
                     try:
                         if request.hard_delete:
-                            self._backend._db.delete(doc.external_id)
+                            await self._storage.delete(doc.external_id)
                         else:
-                            self._backend._db.update(
+                            await self._storage.update(
                                 doc.external_id,
                                 metadata={"deleted": True, "deleted_at": utc_now().isoformat()},
                             )
@@ -449,7 +449,7 @@ class ForgettingService:
 
             # Search for all user documents
             prefix = f"{request.user_ctx.tenant_id}/{request.user_ctx.user_id}/"
-            search_results = self._backend._db.search(query="", k=10000)
+            search_results = await self._storage.search_filtered(query="", k=10000)
 
             for doc in search_results:
                 if not doc.external_id.startswith(prefix):
@@ -476,9 +476,9 @@ class ForgettingService:
                 if should_delete:
                     try:
                         if request.hard_delete:
-                            self._backend._db.delete(doc.external_id)
+                            await self._storage.delete(doc.external_id)
                         else:
-                            self._backend._db.update(
+                            await self._storage.update(
                                 doc.external_id,
                                 metadata={"deleted": True, "deleted_at": utc_now().isoformat()},
                             )
@@ -514,7 +514,7 @@ class ForgettingService:
 
             # Semantic search
             prefix = f"{request.user_ctx.tenant_id}/{request.user_ctx.user_id}/"
-            search_results = self._backend._db.search(
+            search_results = await self._storage.search_filtered(
                 query=request.query or "",
                 k=1000,
             )
@@ -525,9 +525,9 @@ class ForgettingService:
 
                 try:
                     if request.hard_delete:
-                        self._backend._db.delete(doc.external_id)
+                        await self._storage.delete(doc.external_id)
                     else:
-                        self._backend._db.update(
+                        await self._storage.update(
                             doc.external_id,
                             metadata={"deleted": True, "deleted_at": utc_now().isoformat()},
                         )
@@ -565,7 +565,7 @@ class ForgettingService:
             prefix = f"{request.user_ctx.tenant_id}/{request.user_ctx.user_id}/"
             topics_lower = {t.lower() for t in (request.topics or [])}
 
-            search_results = self._backend._db.search(query="", k=10000)
+            search_results = await self._storage.search_filtered(query="", k=10000)
 
             for doc in search_results:
                 if not doc.external_id.startswith(prefix):
@@ -582,9 +582,9 @@ class ForgettingService:
                 if doc_tags_lower & topics_lower:
                     try:
                         if request.hard_delete:
-                            self._backend._db.delete(doc.external_id)
+                            await self._storage.delete(doc.external_id)
                         else:
-                            self._backend._db.update(
+                            await self._storage.update(
                                 doc.external_id,
                                 metadata={"deleted": True, "deleted_at": utc_now().isoformat()},
                             )
@@ -620,7 +620,7 @@ class ForgettingService:
 
             # Find all documents for this user
             prefix = f"{request.user_ctx.tenant_id}/{request.user_ctx.user_id}/"
-            search_results = self._backend._db.search(query="", k=100000)
+            search_results = await self._storage.search_filtered(query="", k=100000)
 
             for doc in search_results:
                 if not doc.external_id.startswith(prefix):
@@ -628,9 +628,9 @@ class ForgettingService:
 
                 try:
                     if request.hard_delete:
-                        self._backend._db.delete(doc.external_id)
+                        await self._storage.delete(doc.external_id)
                     else:
-                        self._backend._db.update(
+                        await self._storage.update(
                             doc.external_id,
                             metadata={"deleted": True, "deleted_at": utc_now().isoformat()},
                         )
@@ -679,9 +679,9 @@ class ForgettingService:
         """Delete a document from the backend."""
         try:
             if hard_delete:
-                self._backend._db.delete(external_id)
+                await self._storage.delete(external_id)
             else:
-                self._backend._db.update(
+                await self._storage.update(
                     external_id,
                     metadata={"deleted": True, "deleted_at": utc_now().isoformat()},
                 )

@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, AsyncIterator, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from silicon_memory.core.utils import utc_now
-from silicon_memory.security.types import UserContext, PrivacyMetadata
+from silicon_memory.security.types import PrivacyMetadata, UserContext
 
 if TYPE_CHECKING:
-    from silicon_memory.storage.silicondb_backend import SiliconDBBackend
+    from silicon_memory.storage.engine import StorageLayer
 
 
 class ExportFormat(Enum):
@@ -49,7 +50,7 @@ class MemoryRecord:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "MemoryRecord":
+    def from_dict(cls, data: dict[str, Any]) -> MemoryRecord:
         """Create from dictionary."""
         privacy = None
         if data.get("privacy"):
@@ -208,7 +209,7 @@ class MemoryInspector:
     - Correct: Edit specific memories
 
     Example:
-        >>> inspector = MemoryInspector(backend)
+        >>> inspector = MemoryInspector(storage)
         >>>
         >>> # Get overview
         >>> inspection = await inspector.inspect_memories(user_ctx)
@@ -227,8 +228,8 @@ class MemoryInspector:
         ... )
     """
 
-    def __init__(self, backend: "SiliconDBBackend") -> None:
-        self._backend = backend
+    def __init__(self, storage: StorageLayer) -> None:
+        self._storage = storage
 
     async def inspect_memories(
         self,
@@ -252,7 +253,7 @@ class MemoryInspector:
 
         try:
             # Search all user documents
-            search_results = self._backend._db.search(query="", k=100000)
+            search_results = await self._storage.search_filtered(query="", k=100000)
 
             for doc in search_results:
                 if not doc.external_id.startswith(prefix):
@@ -336,7 +337,7 @@ class MemoryInspector:
         valid_types = set(entity_types) if entity_types else None
 
         try:
-            search_results = self._backend._db.search(query="", k=100000)
+            search_results = await self._storage.search_filtered(query="", k=100000)
 
             for doc in search_results:
                 if not doc.external_id.startswith(prefix):
@@ -421,7 +422,7 @@ class MemoryInspector:
                 # Check if exists
                 exists = False
                 try:
-                    existing = self._backend._db.get(new_external_id)
+                    existing = await self._storage.get(new_external_id)
                     exists = existing is not None
                 except Exception:
                     pass
@@ -439,13 +440,13 @@ class MemoryInspector:
 
                 # Import
                 if exists:
-                    self._backend._db.update(
+                    await self._storage.update(
                         new_external_id,
                         text=record.content,
                         metadata=metadata,
                     )
                 else:
-                    self._backend._db.ingest(
+                    await self._storage.ingest(
                         external_id=new_external_id,
                         text=record.content,
                         metadata=metadata,
@@ -490,7 +491,7 @@ class MemoryInspector:
 
         try:
             # Get existing document
-            doc = self._backend._db.get(entity_id)
+            doc = await self._storage.get(entity_id)
             if not doc:
                 result.error_message = "Entity not found"
                 return result
@@ -526,7 +527,7 @@ class MemoryInspector:
             new_metadata["updated_at"] = utc_now().isoformat()
 
             # Update
-            self._backend._db.update(
+            await self._storage.update(
                 entity_id,
                 text=new_text,
                 metadata=new_metadata,
@@ -559,7 +560,7 @@ class MemoryInspector:
             entity_id = f"{user_ctx.tenant_id}/{user_ctx.user_id}/{entity_id}"
 
         try:
-            doc = self._backend._db.get(entity_id)
+            doc = await self._storage.get(entity_id)
             if not doc:
                 return None
 

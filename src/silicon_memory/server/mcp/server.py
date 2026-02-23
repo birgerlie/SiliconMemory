@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
 from uuid import UUID, uuid4
 
 from mcp.server.fastmcp import FastMCP
 
-from silicon_memory.core.decision import Alternative, Assumption, Decision
+from silicon_memory.core.decision import Assumption, Decision
 from silicon_memory.core.types import (
     Belief,
     Experience,
@@ -138,7 +137,7 @@ def create_mcp_server(config: ServerConfig) -> FastMCP:
 
         memory = _get_memory()
         item_id = uuid4()
-        tag_set = set(t.strip() for t in tags.split(",") if t.strip()) if tags else set()
+        tag_set = {t.strip() for t in tags.split(",") if t.strip()} if tags else set()
         source = Source(id="mcp", type=SourceType.HUMAN, reliability=0.8)
 
         # Auto-classify using LLM
@@ -352,7 +351,7 @@ def create_mcp_server(config: ServerConfig) -> FastMCP:
         except (json.JSONDecodeError, KeyError, ValueError):
             pass
 
-        tag_set = set(t.strip() for t in tags.split(",") if t.strip()) if tags else set()
+        tag_set = {t.strip() for t in tags.split(",") if t.strip()} if tags else set()
 
         decision = Decision(
             title=title,

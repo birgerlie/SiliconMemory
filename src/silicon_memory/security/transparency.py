@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
-from collections import deque
 from enum import Enum
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from silicon_memory.core.utils import utc_now
 from silicon_memory.security.types import UserContext
@@ -14,7 +14,8 @@ from silicon_memory.security.types import UserContext
 if TYPE_CHECKING:
     from uuid import UUID
 
-    from silicon_memory.storage.silicondb_backend import SiliconDBBackend
+    from silicon_memory.storage.beliefs import BeliefStore
+    from silicon_memory.storage.engine import StorageLayer
 
 
 class ProvenanceType(Enum):
@@ -55,7 +56,7 @@ class ProvenanceEvent:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ProvenanceEvent":
+    def from_dict(cls, data: dict[str, Any]) -> ProvenanceEvent:
         """Create from dictionary."""
         return cls(
             event_type=ProvenanceType(data["event_type"]),
@@ -98,7 +99,7 @@ class AccessLogEntry:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "AccessLogEntry":
+    def from_dict(cls, data: dict[str, Any]) -> AccessLogEntry:
         """Create from dictionary."""
         return cls(
             entity_id=data["entity_id"],
@@ -203,7 +204,7 @@ class TransparencyService:
     - Related memories
 
     Example:
-        >>> service = TransparencyService(backend)
+        >>> service = TransparencyService(storage)
         >>>
         >>> # Why do you know about Python?
         >>> chains = await service.why_do_you_know(user_ctx, "Python")
@@ -216,10 +217,12 @@ class TransparencyService:
 
     def __init__(
         self,
-        backend: "SiliconDBBackend",
+        storage: StorageLayer,
         max_access_log_entries: int = 10_000,
+        beliefs: BeliefStore | None = None,
     ) -> None:
-        self._backend = backend
+        self._storage = storage
+        self._beliefs = beliefs
         self._access_log: deque[AccessLogEntry] = deque(maxlen=max_access_log_entries)
 
     async def why_do_you_know(
@@ -245,7 +248,7 @@ class TransparencyService:
 
         # Search for matching memories
         prefix = f"{user_ctx.tenant_id}/{user_ctx.user_id}/"
-        search_results = self._backend._db.search(query=query, k=limit * 2)
+        search_results = await self._storage.search_filtered(query=query, k=limit * 2)
 
         for doc in search_results:
             if not doc.external_id.startswith(prefix):
@@ -279,7 +282,7 @@ class TransparencyService:
             entity_id = f"{user_ctx.tenant_id}/{user_ctx.user_id}/{entity_id}"
 
         try:
-            doc = self._backend._db.get(entity_id)
+            doc = await self._storage.get(entity_id)
             if doc:
                 return await self._build_provenance_chain_from_doc(doc, entity_id)
         except Exception:
@@ -354,12 +357,12 @@ class TransparencyService:
             if "/" not in entity_id:
                 full_id = f"{user_ctx.tenant_id}/{user_ctx.user_id}/{entity_id}"
 
-            doc = self._backend._db.get(full_id)
+            doc = await self._storage.get(full_id)
             if doc:
                 current_metadata = doc.get("metadata", {})
                 current_metadata["access_count"] = current_metadata.get("access_count", 0) + 1
                 current_metadata["last_accessed"] = utc_now().isoformat()
-                self._backend._db.update(full_id, metadata=current_metadata)
+                await self._storage.update(full_id, metadata=current_metadata)
         except Exception:
             pass
 
@@ -384,7 +387,7 @@ class TransparencyService:
             if "/" not in entity_id:
                 full_id = f"{user_ctx.tenant_id}/{user_ctx.user_id}/{entity_id}"
 
-            doc = self._backend._db.get(full_id)
+            doc = await self._storage.get(full_id)
             if not doc:
                 return False
 
@@ -393,7 +396,7 @@ class TransparencyService:
             provenance.append(event.to_dict())
             metadata["provenance"] = provenance
 
-            self._backend._db.update(full_id, metadata=metadata)
+            await self._storage.update(full_id, metadata=metadata)
             return True
         except Exception:
             return False
@@ -424,7 +427,7 @@ class TransparencyService:
                 full_id = f"{user_ctx.tenant_id}/{user_ctx.user_id}/{entity_id}"
 
             # Get neighbors from graph
-            neighbors = self._backend._db.get_neighbors(full_id, k=limit)
+            neighbors = await self._storage.get_neighbors(full_id, k=limit)
             prefix = f"{user_ctx.tenant_id}/{user_ctx.user_id}/"
 
             for neighbor in neighbors:
@@ -436,7 +439,7 @@ class TransparencyService:
         return related
 
     @staticmethod
-    def _extract_uuid_from_external_id(external_id: str) -> "UUID":
+    def _extract_uuid_from_external_id(external_id: str) -> UUID:
         """Extract UUID from external_id like 'tenant/user/belief-<uuid>'."""
         from uuid import UUID
         parts = external_id.rsplit("-", 1)
@@ -531,11 +534,11 @@ class TransparencyService:
             # Get related entities — prefer native evidence edges
             related = []
             if (
-                hasattr(self._backend, "_config")
-                and getattr(self._backend._config, "use_evidence_links", False)
+                self._beliefs is not None
+                and getattr(self._storage._config, "use_evidence_links", False)
             ):
                 try:
-                    edges = await self._backend.get_evidence_for_belief(
+                    edges = await self._beliefs.get_evidence_for_belief(
                         self._extract_uuid_from_external_id(external_id)
                     )
                     for edge in edges[:10]:

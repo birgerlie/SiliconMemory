@@ -51,7 +51,7 @@ def _load_adapter(source_type: str, entity_resolver: EntityResolver | None = Non
             return cls(entity_resolver=entity_resolver)
         return cls()
     except (ImportError, AttributeError) as e:
-        raise IngestionError(f"Failed to load adapter for '{source_type}': {e}")
+        raise IngestionError(f"Failed to load adapter for '{source_type}': {e}") from e
 
 
 @router.post("/ingest")

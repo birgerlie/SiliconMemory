@@ -23,16 +23,26 @@ ExtractionWorker. This engine reasons over already-extracted beliefs:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
-from datetime import datetime
-from typing import Any, TYPE_CHECKING
+import logging
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
-from silicon_memory.core.types import Belief, BeliefStatus, Source, SourceType, Triplet
 from silicon_memory.core.decision import DecisionStatus
+from silicon_memory.core.types import Belief, BeliefStatus, Source, SourceType, Triplet
 from silicon_memory.core.utils import utc_now
-import logging
-
+from silicon_memory.reflection.consolidation import MemoryConsolidator
+from silicon_memory.reflection.generator import BeliefGenerator
+from silicon_memory.reflection.hypothesis import HypothesisGenerator
+from silicon_memory.reflection.inference import TransitiveInferenceEngine
+from silicon_memory.reflection.lifecycle import BeliefLifecycleManager
+from silicon_memory.reflection.llm_extractor import LLMPatternExtractor
+from silicon_memory.reflection.observation_consolidator import ObservationConsolidator
+from silicon_memory.reflection.predicate_consolidator import PredicateConsolidator
+from silicon_memory.reflection.procedure_detector import ProcedureDetector
+from silicon_memory.reflection.processor import ExperienceProcessor
+from silicon_memory.reflection.question_generator import QuestionGenerator
 from silicon_memory.reflection.types import (
     BeliefCandidate,
     ConsolidationResult,
@@ -40,19 +50,11 @@ from silicon_memory.reflection.types import (
     ReflectionConfig,
     ReflectionResult,
 )
+from silicon_memory.storage._converters import search_result_to_belief as _search_result_to_belief
+from silicon_memory.storage._helpers import rget as _rget
+from silicon_memory.storage.config import NODE_TYPE_BELIEF
 
 logger = logging.getLogger(__name__)
-from silicon_memory.reflection.processor import ExperienceProcessor
-from silicon_memory.reflection.llm_extractor import LLMPatternExtractor
-from silicon_memory.reflection.generator import BeliefGenerator
-from silicon_memory.reflection.inference import TransitiveInferenceEngine
-from silicon_memory.reflection.hypothesis import HypothesisGenerator
-from silicon_memory.reflection.consolidation import MemoryConsolidator
-from silicon_memory.reflection.lifecycle import BeliefLifecycleManager
-from silicon_memory.reflection.procedure_detector import ProcedureDetector
-from silicon_memory.reflection.question_generator import QuestionGenerator
-from silicon_memory.reflection.observation_consolidator import ObservationConsolidator
-from silicon_memory.reflection.predicate_consolidator import PredicateConsolidator
 
 if TYPE_CHECKING:
     from silicon_memory.entities.resolver import EntityResolver
@@ -133,11 +135,11 @@ class ReflectionEngine:
 
     def __init__(
         self,
-        memory: "SiliconMemory",
+        memory: SiliconMemory,
         llm: Any,
         config: ReflectionConfig | None = None,
         extraction_cache_dir: str | None = None,
-        resolver: "EntityResolver | None" = None,
+        resolver: EntityResolver | None = None,
     ) -> None:
         self._memory = memory
         self._llm = llm
@@ -168,7 +170,8 @@ class ReflectionEngine:
         self._observation_consolidator: ObservationConsolidator | None = None
         if resolver is not None:
             self._observation_consolidator = ObservationConsolidator(
-                backend=memory._backend,
+                storage=memory._storage,
+                beliefs=memory._beliefs,
                 resolver=resolver,
                 llm=llm,
             )
@@ -323,27 +326,32 @@ class ReflectionEngine:
                 await asyncio.sleep(0)
                 logger.info("Post-inference: %d committed IDs", len(committed_ids))
 
+                # Propagate confidence changes through co-occurrence graph
+                t0 = _time.monotonic()
+                await self._propagate_significant_changes(
+                    recently_extracted, committed_beliefs,
+                )
+                timings["propagate"] = _time.monotonic() - t0
+
                 # Lightweight consolidation (lifecycle only — heavy MC ops deferred)
                 if committed_ids:
                     t0 = _time.monotonic()
                     result.consolidation = await self._consolidate_beliefs(committed_ids)
                     timings["consolidate_beliefs"] = _time.monotonic() - t0
 
-                # Review decisions
-                t0 = _time.monotonic()
-                await self._review_active_decisions()
-                timings["review_decisions"] = _time.monotonic() - t0
+                # Decision review is now handled by DecisionReviewWorker
+                timings["review_decisions"] = 0.0
 
                 # Mark sources as processed by reflection so future cycles only process deltas.
                 t0 = _time.monotonic()
                 try:
                     if extraction_item_external_ids:
-                        await self._memory._backend.mark_extraction_items_processed(
+                        await self._memory._reflection_tracker.mark_extraction_items_processed(
                             extraction_item_external_ids,
                             run_id=run_id,
                         )
                     if extracted_external_ids:
-                        await self._memory._backend.mark_beliefs_reflection_processed(
+                        await self._memory._beliefs.mark_beliefs_reflection_processed(
                             extracted_external_ids,
                         )
                 except Exception as e:
@@ -394,9 +402,8 @@ class ReflectionEngine:
                 for contra_id in candidate.contradicts:
                     result.contradictions.append((candidate.id, contra_id))
 
-            t0 = _time.monotonic()
-            await self._review_active_decisions()
-            timings["review_decisions"] = _time.monotonic() - t0
+            # Decision review is now handled by DecisionReviewWorker
+            timings["review_decisions"] = 0.0
 
             committed_beliefs: list[Belief] = []
             committed_ids: list[UUID] = []
@@ -478,7 +485,7 @@ class ReflectionEngine:
                     "contradictions": len(result.contradictions),
                     "timings": result.timings,
                 }
-                await self._memory._backend.record_reflection_run(
+                await self._memory._reflection_tracker.record_reflection_run(
                     run_id=run_id,
                     status=reflection_status,
                     metrics=metrics,
@@ -491,10 +498,12 @@ class ReflectionEngine:
         limit: int | None = None,
     ) -> tuple[list[Belief], list[str], list[str]]:
         """Read unprocessed extraction journal items and resolve beliefs."""
-        backend = self._memory._backend
-        effective_limit = limit or self._config.max_experiences_per_batch or 100_000
+        effective_limit = (
+            limit if limit is not None and limit > 0
+            else self._config.max_experiences_per_batch or 100_000
+        )
         try:
-            items = await backend.get_unprocessed_extraction_items(limit=effective_limit)
+            items = await self._memory._reflection_tracker.get_unprocessed_extraction_items(limit=effective_limit)
         except Exception as e:
             logger.debug("Failed to query extraction journal: %s", e)
             return [], [], []
@@ -624,13 +633,19 @@ class ReflectionEngine:
         import time as _time
 
         cooldown = max(0.0, self._config.empty_extracted_cooldown_s)
-        if cooldown > 0 and self._last_empty_extracted_scan is not None:
-            if (_time.monotonic() - self._last_empty_extracted_scan) < cooldown:
-                return [], []
+        if (
+            cooldown > 0
+            and self._last_empty_extracted_scan is not None
+            and (_time.monotonic() - self._last_empty_extracted_scan) < cooldown
+        ):
+            return [], []
 
         try:
-            backend = self._memory._backend
-            effective_limit = limit or self._config.max_experiences_per_batch or 100_000
+            storage = self._memory._storage
+            effective_limit = (
+                limit if limit is not None and limit > 0
+                else self._config.max_experiences_per_batch or 100_000
+            )
 
             # Search belief documents via BM25 — these carry full metadata.
             # Try multiple query terms in case a sparse index misses one.
@@ -643,20 +658,20 @@ class ReflectionEngine:
                 if extracted:
                     break  # Found results with a previous term
 
-                results = backend._search_by_type(
+                results = storage.search_by_type(
                     query_term,
-                    {backend.NODE_TYPE_BELIEF},
+                    {NODE_TYPE_BELIEF},
                     target=effective_limit * 4,  # Over-fetch since we filter by metadata
                 )
 
                 for r in results:
-                    external_id = backend._rget(r, "external_id", "")
+                    external_id = _rget(r, "external_id", "")
                     if not external_id:
                         continue
-                    metadata = backend._rget(r, "metadata") or {}
-                    if not backend._can_access(metadata, _external_id=external_id):
+                    metadata = _rget(r, "metadata") or {}
+                    if not storage.can_access(metadata, _external_id=external_id):
                         continue
-                    belief = backend._search_result_to_belief(r)
+                    belief = _search_result_to_belief(r)
                     if not belief:
                         continue
                     if str(belief.id) in seen_ids:
@@ -694,7 +709,6 @@ class ReflectionEngine:
         heavy MC-based consolidation instead.
         """
         result = ConsolidationResult()
-        backend = self._memory._backend
 
         # All SiliconDB global operations (MC update, MC contradiction
         # detection, triple contradiction detection, uncertain belief queries)
@@ -727,7 +741,7 @@ class ReflectionEngine:
                     transitions = await self._lifecycle.evaluate_rule_based(beliefs_to_evaluate)
 
                 for bid, (new_status, reason) in transitions.items():
-                    await backend.update_belief_status(bid, new_status, reason)
+                    await self._memory._beliefs.update_belief_status(bid, new_status, reason)
                     logger.info("Lifecycle: belief %s → %s (%s)", bid, new_status.value, reason)
         except Exception as e:
             logger.warning("Lifecycle evaluation failed: %s", e)
@@ -872,19 +886,11 @@ class ReflectionEngine:
                     return
                 validated_count = 0
                 if "hypotheses_generated" in stats:
-                    backend = self._memory._backend
-                    if hasattr(backend, "get_beliefs_by_tag"):
-                        hyp_beliefs = await backend.get_beliefs_by_tag(
-                            "hypothesis",
-                            limit=200,
-                            min_confidence=0.0,
-                        )
-                    else:
-                        hyp_beliefs = await self._memory.query_beliefs(
-                            query="hypothesis",
-                            limit=50,
-                            min_confidence=0.0,
-                        )
+                    hyp_beliefs = await self._memory._beliefs.get_beliefs_by_tag(
+                        "hypothesis",
+                        limit=200,
+                        min_confidence=0.0,
+                    )
                     max_validations = max(0, int(self._config.dream_max_hypothesis_validations))
                     for hyp in hyp_beliefs:
                         if max_validations and validated_count >= max_validations:
@@ -902,10 +908,10 @@ class ReflectionEngine:
                             if b.id != hyp.id and "hypothesis" not in (b.tags or set())
                         )
                         if support_count >= 2:
-                            await backend.update_belief_confidence(hyp.id, delta=0.15)
+                            await self._memory._beliefs.update_belief_confidence(hyp.id, delta=0.15)
                             validated_count += 1
                         elif support_count == 0:
-                            await backend.update_belief_confidence(hyp.id, delta=-0.05)
+                            await self._memory._beliefs.update_belief_confidence(hyp.id, delta=-0.05)
                 stats["hypotheses_validated"] = validated_count
             except Exception as e:
                 logger.warning("Hypothesis validation failed: %s", e)
@@ -965,7 +971,7 @@ class ReflectionEngine:
             if "total_seconds" not in stats:
                 stats["total_seconds"] = round(_time.monotonic() - dream_start, 1)
             try:
-                await self._memory._backend.record_dream_run(
+                await self._memory._reflection_tracker.record_dream_run(
                     run_id=run_id,
                     status=dream_status,
                     metrics=stats,
@@ -979,8 +985,7 @@ class ReflectionEngine:
         Queries all entity nodes, asks LLM to group aliases, and
         registers via EntityResolver if available.
         """
-        backend = self._memory._backend
-        db = backend._db
+        db = self._memory._storage._db
 
         # Get all unique subjects and objects
         try:
@@ -1049,8 +1054,78 @@ class ReflectionEngine:
             logger.debug("Entity consolidation LLM call failed: %s", e)
             return 0
 
+    async def _propagate_significant_changes(
+        self,
+        old_beliefs: list[Belief],
+        new_beliefs: list[Belief],
+    ) -> int:
+        """Propagate confidence changes through the co-occurrence graph.
+
+        Only propagates for beliefs where |old - new| > 0.15 to avoid
+        noise propagation. Uses SiliconDB's native BFS propagation.
+        """
+        storage = self._memory._storage
+        propagated = 0
+
+        # Build lookup of old confidence by ID
+        old_conf: dict[UUID, float] = {b.id: b.confidence for b in old_beliefs}
+
+        for belief in new_beliefs:
+            old_c = old_conf.get(belief.id)
+            if old_c is None:
+                continue
+            delta = abs(belief.confidence - old_c)
+            if delta <= 0.15:
+                continue
+            try:
+                ext_id = storage.build_external_id("belief", belief.id)
+                await storage.propagate(ext_id, belief.confidence, decay=0.5)
+                propagated += 1
+            except Exception:
+                break  # API likely unavailable
+
+        if propagated > 0:
+            logger.info("Propagated confidence changes for %d beliefs", propagated)
+        return propagated
+
+    async def _get_uncertain_beliefs_for_reflection(
+        self,
+        min_entropy: float = 0.7,
+        k: int = 20,
+    ) -> list[Belief]:
+        """Fetch high-entropy beliefs that need more evidence.
+
+        Used to bias reflection toward resolving uncertainty rather
+        than discovering new patterns.
+        """
+        storage = self._memory._storage
+        try:
+            uncertain = await storage.get_uncertain_beliefs(
+                min_entropy=min_entropy, k=k,
+            )
+        except Exception:
+            return []
+
+        beliefs: list[Belief] = []
+        for item in uncertain:
+            ext_id = item.get("external_id", "") if isinstance(item, dict) else ""
+            if not ext_id or "/belief-" not in ext_id:
+                continue
+            try:
+                uuid_str = ext_id.rsplit("belief-", 1)[-1]
+                belief = await self._memory.get_belief(UUID(uuid_str))
+                if belief:
+                    beliefs.append(belief)
+            except Exception:
+                continue
+        return beliefs
+
     async def _review_active_decisions(self) -> None:
-        """Review active decisions for assumption confidence drift."""
+        """Review active decisions for assumption confidence drift.
+
+        Now primarily called by DecisionReviewWorker rather than inline
+        during reflect(). Kept as a public method for direct callers.
+        """
         try:
             decisions = await self._memory.recall_decisions(
                 query="*", k=50, min_confidence=0.0
@@ -1082,14 +1157,12 @@ class ReflectionEngine:
                         f"drifted {drift:.2f} from {assumption.confidence_at_decision:.2f} "
                         f"to {belief.confidence:.2f}"
                     )
-                    try:
-                        await self._memory._backend.update_decision_status(
+                    with contextlib.suppress(Exception):
+                        await self._memory._decisions.update_decision_status(
                             decision.id,
                             DecisionStatus.REVISIT_SUGGESTED,
                             reason=reason,
                         )
-                    except Exception:
-                        pass
                     break
 
     async def reflect_incremental(

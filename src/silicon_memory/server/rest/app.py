@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 import re
 import time
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -196,40 +196,38 @@ def create_app(config: ServerConfig) -> FastAPI:
                     "Failed to load bootstrap rules JSON from %s", bootstrap_path, exc_info=True
                 )
 
-        # Enable SiliconDB event log and register percolator rules
-        if config.use_event_stream:
-            try:
-                _first_instance = app.state.pool.active_instances()
-                if _first_instance:
-                    _db = _first_instance[0]._backend._db
-                    _db.enable_event_log(capacity=100_000)
-                    _db.create_event_rule(
-                        name="reflection_trigger",
-                        emit_event_type="reflection.trigger",
-                        filter={"event_type": "ingest.batch.searchable"},
-                        cooldown_ms=5000,
-                        dedupe_window_ms=10000,
-                    )
-                    logger.info("SiliconDB event log enabled, percolator rules registered")
-            except Exception:
-                logger.debug("Event log/percolator setup skipped (no active instances or unsupported)", exc_info=True)
-
         # Start background workers if full mode
         if config.mode == "full":
-            from silicon_memory.server.workers import ReflectionWorker
+            from silicon_memory.server.workers import (
+                BeliefLifecycleWorker,
+                DecisionReviewWorker,
+                DreamWorker,
+                EntityResolutionWorker,
+                ExtractionWorker,
+                RaptorRebuildWorker,
+                ReflectionWorker,
+                WorkerRegistry,
+            )
 
-            worker = ReflectionWorker(app.state.pool, config, llm=app.state.scheduler)
-            app.state.worker = worker
-            await worker.start()
-            logger.info("Background reflection worker started (interval=%ds)", config.reflect_interval)
+            registry = WorkerRegistry(app.state.pool, config)
+            registry.register(ExtractionWorker(app.state.pool, config))
+            registry.register(ReflectionWorker(app.state.pool, config))
+            registry.register(EntityResolutionWorker(app.state.pool, config))
+            registry.register(BeliefLifecycleWorker(app.state.pool, config))
+            registry.register(DecisionReviewWorker(app.state.pool, config))
+            registry.register(DreamWorker(app.state.pool, config))
+            registry.register(RaptorRebuildWorker(app.state.pool, config))
+            app.state.worker_registry = registry
+            await registry.startup()
+            logger.info("WorkerRegistry started (%d workers)", len(registry.workers))
 
         logger.info("Silicon Memory server started (mode=%s)", config.mode)
         yield
 
         # Shutdown
-        if hasattr(app.state, "worker"):
-            await app.state.worker.stop()
-            logger.info("Background reflection worker stopped")
+        if hasattr(app.state, "worker_registry"):
+            await app.state.worker_registry.shutdown()
+            logger.info("WorkerRegistry stopped")
 
         await app.state.scheduler.shutdown()
         logger.info("LLM scheduler stopped")

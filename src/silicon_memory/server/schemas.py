@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
-from uuid import UUID
 
 from pydantic import BaseModel, Field
-
 
 # ========== Common ==========
 
@@ -237,6 +234,7 @@ class HealthResponse(BaseModel):
     status: str = "ok"
     version: str
     uptime_seconds: float
+    workers: dict[str, Any] | None = None
 
 
 class StatusResponse(BaseModel):
@@ -248,3 +246,4 @@ class StatusResponse(BaseModel):
     reflection_count: int = 0
     mode: str
     event_stream: dict[str, Any] | None = None
+    workers: dict[str, Any] | None = None
