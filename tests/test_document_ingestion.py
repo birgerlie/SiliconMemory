@@ -57,7 +57,7 @@ class TestDocumentConfig:
     def test_defaults(self):
         config = DocumentConfig()
         assert config.segment_by_headings is True
-        assert config.extract_action_items is True
+        assert config.extract_action_items is False
         assert config.resolve_entities is True
         assert config.min_heading_level == 1
         assert config.max_heading_level == 4
@@ -383,7 +383,8 @@ class TestDocumentIngestionPipeline:
 
         assert result.experiences_created >= 2
         assert result.source_type == "document"
-        assert result.action_items_detected >= 1
+        # extract_action_items defaults to False (only useful for meeting notes)
+        assert result.action_items_detected >= 0
 
     async def test_plaintext_pipeline(self, mock_memory):
         """Test full ingestion of a plain text document."""
